@@ -1,0 +1,17 @@
+{
+  "HOLYRICS_UNREACHABLE": "configurar-holyrics",
+  "HOLYRICS_NOT_RUNNING": "configurar-holyrics",
+  "HOLYRICS_TOKEN_INVALID": "configurar-holyrics",
+  "AUTH_REJECTED": "configurar-holyrics",
+  "HOLYRICS_PERMISSION_MISSING": "configurar-holyrics",
+  "PERMISSION_MISSING": "configurar-holyrics",
+  "EDITOR_ALREADY_OPEN": "musica-nao-esta-no-holyrics",
+  "EDITOR_UNSUPPORTED": "musica-nao-esta-no-holyrics",
+  "EDITOR_FAILED": "musica-nao-esta-no-holyrics",
+  "DESTINATION_TEMPORARY": "destino-playlist-temporaria",
+  "DESTINATION_CHANGED": "destino-playlist-temporaria",
+  "LIBRARY_CHANGED": "trocar-de-computador",
+  "CATALOG_CHANGED": "trocar-de-computador",
+  "SONG_AMBIGUOUS": "musica-ambigua-e-vinculos",
+  "SONG_ABSENT": "musica-nao-esta-no-holyrics"
+}

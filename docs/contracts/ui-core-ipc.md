@@ -28,6 +28,11 @@ Datas são ISO-8601 UTC. Tamanho máximo inicial de payload IPC: 1 MiB; artefato
 | `operation.get` | `{ operationId }` | snapshot de fase, progresso e resultado disponível |
 | `diagnostics.preview` | `{}` | categorias/campos que entrarão no export, sem criar arquivo |
 | `diagnostics.export` | `{ includeLogs: boolean, redactMore?: boolean }` | referência temporária ao arquivo local e resumo; não envia para fora |
+| `help.list` | `{}` | metadados dos tópicos empacotados: `id`, `title`, `summary`, `keywords`, `context` |
+| `help.get` | `{ topicId }` | `{ topicId, title, markdown }`; conteúdo validado local, sem HTML confiável |
+| `help.search` | `{ query, limit?: number }` | tópicos e trechos ranqueados pelo índice JSON local, sem rede |
+| `app.diagnosticInfo` | `{}` | resumo copiável sem segredos; a UI só copia após ação explícita |
+| `externalLink.open` | `{ url }` | `{ opened: boolean }`; main valida esquema/host e abre navegador do sistema |
 | `settings.get` / `settings.update` | preferências não secretas e schema versionado | configurações suportadas; não contém tokens |
 
 `preparationId` é opaco, local, expirável e invalidado se setlist, catálogo, destino ou vínculos relevantes mudarem. `destinationConfirmation` registra confirmação humana; o core deve obter novamente o destino corrente imediatamente antes de escrever. Aplicar exige que todas as pendências estejam resolvidas, salvo fluxo parcial explicitamente habilitado e confirmado na UI.
@@ -56,9 +61,9 @@ Datas são ISO-8601 UTC. Tamanho máximo inicial de payload IPC: 1 MiB; artefato
 
 ## Erros tipados
 
-`CoreError = { code, messageKey, retryable, correlationId, details? }`. `details` é limitado a códigos/campos não secretos e nunca inclui header, token, body HTTP integral ou stack trace.
+`CoreError = { code, messageKey, retryable, correlationId, details?, helpTopicId?: string }`. `helpTopicId` é opcional, validado contra os IDs do bundle; se ausente/inválido, a UI oferece a ajuda inicial. `details` é limitado a códigos/campos não secretos e nunca inclui header, token, body HTTP integral ou stack trace.
 
-Códigos: `AUTH_REQUIRED`, `AUTH_REJECTED`, `PERMISSION_MISSING`, `SERVICE_UNAVAILABLE`, `HOLYRICS_NOT_RUNNING`, `DESTINATION_CHANGED`, `SETLIST_CHANGED`, `CATALOG_CHANGED`, `PREPARATION_EXPIRED`, `SONG_AMBIGUOUS`, `SONG_ABSENT`, `RECONCILIATION_REQUIRED`, `CONFLICT`, `OPERATION_BUSY`, `CANCEL_NOT_SAFE`, `TIMEOUT`, `RATE_LIMITED`, `INVALID_RESPONSE`, `EDITOR_ALREADY_OPEN`, `EDITOR_UNSUPPORTED`, `EDITOR_FAILED`, `STATE_CORRUPT`, `STATE_UNSUPPORTED`, `APPLY_FAILED`, `VERIFY_FAILED`, `RESTORE_FAILED`, `REPORT_QUEUED`, `INTERNAL`.
+Códigos: `AUTH_REQUIRED`, `AUTH_REJECTED`, `PERMISSION_MISSING`, `SERVICE_UNAVAILABLE`, `HOLYRICS_NOT_RUNNING`, `DESTINATION_CHANGED`, `SETLIST_CHANGED`, `CATALOG_CHANGED`, `PREPARATION_EXPIRED`, `SONG_AMBIGUOUS`, `SONG_ABSENT`, `RECONCILIATION_REQUIRED`, `CONFLICT`, `OPERATION_BUSY`, `CANCEL_NOT_SAFE`, `TIMEOUT`, `RATE_LIMITED`, `INVALID_RESPONSE`, `EDITOR_ALREADY_OPEN`, `EDITOR_UNSUPPORTED`, `EDITOR_FAILED`, `STATE_CORRUPT`, `STATE_UNSUPPORTED`, `APPLY_FAILED`, `VERIFY_FAILED`, `RESTORE_FAILED`, `REPORT_QUEUED`, `HELP_TOPIC_NOT_FOUND`, `HELP_INDEX_INVALID`, `EXTERNAL_LINK_BLOCKED`, `INTERNAL`.
 
 ## Concorrência, cancelamento e timeouts
 
@@ -66,9 +71,30 @@ Somente uma operação mutável por vez; outra retorna `OPERATION_BUSY`. Prepara
 
 Timeout inicial configurável e mensurável: conexão/uma chamada HTTP 10 s; operação Videira 30 s; aplicação total 90 s, incluindo estabilização/releitura; restauração pode estender até 60 s. Não aplicar timeout cego durante escrita. Releitura é repetida com backoff curto até sequência estável ou limite. Cancelamento é aceito antes de `applying`; depois disso, terminar verificação e restauração. Encerramento forçado é recuperado por releitura no próximo início e nunca presume sucesso.
 
+## Ajuda offline
+
+Ajuda é conteúdo local empacotado na mesma versão do app. `help.list/get/search` nunca fazem rede. Renderer desenha Markdown sem HTML bruto e links internos navegam por `topicId` validado. Links externos só abrem por `externalLink.open`; o main permite HTTPS apenas para hosts aprovados, recusa credenciais na URL e redirecionamentos a hosts não permitidos, e encaminha ao navegador padrão do SO. `app.diagnosticInfo` retorna somente versão/build, SO, estados booleanos de configuração/conectividade, versão Holyrics conhecida e códigos/correlation IDs; não retorna token, hostname/IP, caminhos locais ou conteúdo musical. A cópia para clipboard requer ação explícita do usuário.
+
 ## Segurança da ponte
 
 Renderer sem `nodeIntegration`, com sandbox, `contextIsolation`, CSP local e sem conteúdo remoto. Preload expõe funções nomeadas, sem `ipcRenderer` genérico. Main permite destinos HTTPS Videira configurados e loopback Holyrics; rejeita redirecionamento para host externo, protocolo não esperado e URL contendo credencial. Validar limites, tipos e tamanho antes de iniciar operação. Segredos entram somente pelo canal de credenciais e são guardados diretamente no cofre do SO.
+## Mapa inicial de erros para ajuda
+
+IDs abaixo são estáveis e devem existir no front matter. Campo opcional; manter fallback quando um erro ainda não tem artigo.
+
+| `CoreError.code` | `helpTopicId` |
+|---|---|
+| `AUTH_REQUIRED`, `AUTH_REJECTED` | `configurar-credenciais` |
+| `PERMISSION_MISSING`, `HOLYRICS_NOT_RUNNING` | `configurar-holyrics` |
+| `SERVICE_UNAVAILABLE`, `TIMEOUT` | `verificar-conexao` |
+| `DESTINATION_CHANGED` | `selecionar-culto-destino` |
+| `SONG_AMBIGUOUS`, `SONG_ABSENT`, `RECONCILIATION_REQUIRED` | `resolver-musicas` |
+| `APPLY_FAILED`, `VERIFY_FAILED`, `RESTORE_FAILED` | `aplicar-e-recuperar` |
+| `STATE_CORRUPT`, `STATE_UNSUPPORTED` | `dados-locais-e-suporte` |
+## Ajuda contextual
+
+
+Se `CoreError.helpTopicId` estiver presente e corresponder a `help.list`, a UI mostra link contextual para `help.get`; o erro continua utilizável sem esse campo. `F1` abre Ajuda no Windows; `Cmd+?` (com fallback `Cmd+/` conforme layout) no macOS. Menu Ajuda e boas-vindas de primeira execução são responsabilidade da UI. A primeira execução é marcada como vista em preferência local não secreta.
 
 ## Alinhamento pendente com design
 
