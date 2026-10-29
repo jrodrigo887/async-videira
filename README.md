@@ -44,3 +44,7 @@ node src/cli.mjs aplicar --yes
 `preparar` mostra o dry-run e grava o plano local para a etapa seguinte, sem escrita nas APIs. `aplicar` exige essa preparação e `--yes`, revalida setlist/catálogo/destino, aplica e verifica a playlist e só então envia o relatório. Tokens são lidos do ambiente, nunca persistidos nem impressos. Estado fica em JSON no diretório de dados do usuário; testes definem `ASYNC_VIDEIRA_STATE_PATH` para usar arquivos temporários.
 
 Testes: `node --test tests/**/*.test.mjs`.
+
+## Tutorial
+
+Guia completo de configuração do Holyrics e do async-videira (passo a passo, rotina de domingo, troca de PC e problemas comuns): [docs/tutorial/configurar-holyrics-e-async-videira.md](docs/tutorial/configurar-holyrics-e-async-videira.md).
