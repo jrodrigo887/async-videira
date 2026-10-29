@@ -1,0 +1,33 @@
+﻿{
+  "source": "discovery/live-validation.md, Dry-run da bridge; discovery/videira-local-env.md",
+  "note": "Setlist IDs, titles, artists and Holyrics song IDs below are copied from discovery reports. fixture-videira-* song IDs are local labels because the reports do not expose Videira song IDs.",
+  "catalog": [
+    { "id": "1792693855267", "title": "Mil Graus", "artist": "Renascer Praise" },
+    { "id": "1792693855255", "title": "A Boa Parte", "artist": "Florianópolis House Of Prayer e Nívea Soares" },
+    { "id": "1792693855260", "title": "E Ele", "artist": "DROPS" },
+    { "id": "fixture-holyrics-vida-aos-sepulcros", "title": "Vida Aos Sepulcros" }
+  ],
+  "confirmedLinks": [
+    { "songId": "fixture-videira-mil-graus", "externalId": "1792693855267" },
+    { "songId": "fixture-videira-a-boa-parte", "externalId": "1792693855255" },
+    { "songId": "fixture-videira-e-ele", "externalId": "1792693855260" }
+  ],
+  "setlists": [
+    {
+      "id": "async-test-setlist-ordered",
+      "items": [
+        { "position": 0, "songId": "fixture-videira-mil-graus", "title": "Mil Graus", "artist": "Renascer Praise" },
+        { "position": 1, "songId": "fixture-videira-a-boa-parte", "title": "A Boa Parte", "artist": "Florianópolis House Of Prayer e Nívea Soares" },
+        { "position": 2, "songId": "fixture-videira-e-ele", "title": "É Ele", "artist": "DROPS" }
+      ]
+    },
+    {
+      "id": "async-test-setlist-repeat",
+      "items": [
+        { "position": 0, "songId": "fixture-videira-a-boa-parte", "title": "A Boa Parte", "artist": "Florianópolis House Of Prayer e Nívea Soares" },
+        { "position": 1, "songId": "fixture-videira-e-ele", "title": "É Ele", "artist": "DROPS" },
+        { "position": 2, "songId": "fixture-videira-a-boa-parte", "title": "A Boa Parte", "artist": "Florianópolis House Of Prayer e Nívea Soares" }
+      ]
+    }
+  ]
+}

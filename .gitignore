@@ -1,0 +1,43 @@
+﻿# Ignorar dependências, saídas de build e artefatos locais
+node_modules/
+target/
+dist/
+build/
+release/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credential*
+*secret*
+
+# Bancos e backups locais: nunca versionar bancos reais ou cópias de usuário
+*.db
+*.sqlite
+*.sqlite3
+*.db3
+*.wal
+*.shm
+*.bak
+*.backup
+*.dump
+*.sql
+
+# Assinatura e configuração local
+*.mobileprovision
+*.provisionprofile
+*.cer
+*.crt
+*.private
+
+# Credenciais locais de teste (nunca versionar)
+discovery/videira-local-env.md
