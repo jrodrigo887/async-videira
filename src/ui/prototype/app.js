@@ -32,7 +32,15 @@
     settingsMsg: null,
     reminder: { enabled: true, time: "08:00" },
     tray: { startWithOs: true, closeToTray: true },
+    holyricsReal: false,
+    holyricsUrl: "http://127.0.0.1:8091",
+    askAfterMs: 4000,
+    editorCooldownUntil: 0,
+    realMsg: null,
+    help: { topic: "comecar", query: "", copyMsg: null, focusTitle: false },
+    helpReturn: null,
   };
+  const newMissingDialog = (pos) => ({ type: "missing", pos, editor: null, errorCode: null, reread: null, tries: 0, search: null, found: null, candidates: [], pick: null });
   let lastScreen = null;
   let dialogWasOpen = false;
   let dialogReturnKey = null;
@@ -89,6 +97,7 @@
     shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
     undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.9.6-1.5 1.1-1.5 2.2v.3M12 17v.01"/>',
   };
   const icon = (name, cls = "icon") => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
 
@@ -106,6 +115,9 @@
       ${icon(ic, "icon-lg")}
       <div class="grow"><h2>${title}</h2>${body ? `<p>${body}</p>` : ""}${actions ? `<div class="actions">${actions}</div>` : ""}</div>
     </div>`;
+
+  // Ajuda contextual (docs/design/help-map.md): sempre um botão de texto, nunca abre nada fora do app.
+  const helpLink = (id, label = "Ver ajuda sobre isto") => `<button class="ds-link help-link" data-act="help" data-arg="${id}">${icon("help")}${label}</button>`;
 
   // ---------------------------------------------------------------- derivados
   function summary(items) {
@@ -147,7 +159,7 @@
     $app.innerHTML = `
       <div class="app">
         <div class="titlebar" aria-hidden="true"><span>async-videira — Videira Music</span><span class="win-controls"><span>—</span><span>▢</span><span>✕</span></span></div>
-        ${S.screen === "onboarding" ? renderOnboarding() : renderShell()}
+        ${S.screen === "onboarding" ? renderOnboarding() : S.screen === "ajuda" && !S.data.configured ? renderHelp() : renderShell()}
       </div>`;
     $dialog.innerHTML = S.dialog ? renderDialog() : "";
     $proto.innerHTML = renderProto();
@@ -165,6 +177,7 @@
     } else {
       restoreFocus(focusKey);
     }
+    if (S.screen === "ajuda" && S.help.focusTitle && !S.dialog) { S.help.focusTitle = false; const t = document.getElementById("help-title"); t && t.focus({ preventScroll: true }); const m = document.getElementById("main"); m && (m.scrollTop = 0); }
     dialogWasOpen = !!S.dialog;
     lastScreen = S.screen;
     document.body.style.overflow = S.dialog ? "hidden" : "";
@@ -189,6 +202,7 @@
       ["vinculos", "link", "Vínculos", 2],
       ["historico", "history", "Histórico", 3],
       ["ajustes", "settings", "Ajustes", 4],
+      ["ajuda", "help", "Ajuda", "F1"],
     ];
     const current = ["review", "progress", "result"].includes(S.screen) ? "culto" : S.screen === "bandeja" ? "ajustes" : S.screen;
     const h = d.connections.holyrics, v = d.connections.videira;
@@ -205,7 +219,7 @@
         <nav class="app-nav" aria-label="Principal">
           <div class="brand"><span class="brand-mark" aria-hidden="true">V</span><span class="brand-text">async-videira<small>${esc(d.connections.videira.detail.organizationName || "Videira Music")}</small></span></div>
           ${nav.map(([k, ic, label, n]) => `
-            <button class="nav-item" data-act="go" data-arg="${k}" ${current === k ? 'aria-current="page"' : ""} aria-label="${label}${k === "historico" && pending ? `, ${pending} pendentes` : ""}${k === "vinculos" && reconCount ? `, ${reconCount} para revisar` : ""}" title="${label} (Ctrl+${n})">
+            <button class="nav-item" data-act="go" data-arg="${k}" ${current === k ? 'aria-current="page"' : ""} aria-label="${label}${k === "historico" && pending ? `, ${pending} pendentes` : ""}${k === "vinculos" && reconCount ? `, ${reconCount} para revisar` : ""}" title="${label} (${n === "F1" ? "F1" : `Ctrl+${n}`})"${n === "F1" ? ' aria-keyshortcuts="F1"' : ""}>
               ${icon(ic)}<span class="label">${label}</span>
               ${k === "historico" && pending ? `<span class="count" aria-hidden="true">${pending}</span>` : ""}
               ${k === "vinculos" && reconCount ? `<span class="count" aria-hidden="true">${reconCount}</span>` : ""}
@@ -243,8 +257,112 @@
       case "historico": return renderHistorico();
       case "ajustes": return renderAjustes();
       case "bandeja": return renderBandeja();
+      case "ajuda": return renderHelp();
       default: return page("<h1>?</h1>");
     }
+  }
+
+  // ---------------------------------------------------------------- T10 Ajuda (conteúdo em src/help/*.md → help-data.js)
+  const MD = window.PROTO_HELP_MD;
+  const HELP = ((window.PROTO_HELP && window.PROTO_HELP.topics) || []).slice();
+  const HELP_BY_ID = Object.fromEntries(HELP.map((t) => [t.id, t]));
+  const HELP_IDS = new Set(HELP.map((t) => t.id));
+  const HELP_CATS = [["comecar", "Começar"], ["domingo", "Todo domingo"], ["problema", "Resolver problema"], ["tecnico", "Configuração técnica"]];
+  const HELP_INDEX = HELP.map((t) => ({ id: t.id, title: MD.norm(`${t.titulo} ${t.palavrasChave.join(" ")}`), text: MD.norm(`${t.titulo} ${t.palavrasChave.join(" ")} ${MD.plain(t.body)}`) }));
+  // Código de erro/estado → tópico. Fonte da verdade: docs/design/help-map.md
+  const HELP_FOR_CODE = {
+    HOLYRICS_UNREACHABLE: "configurar-holyrics", HOLYRICS_TOKEN_INVALID: "configurar-holyrics", HOLYRICS_PERMISSION_MISSING: "configurar-holyrics",
+    VIDEIRA_TOKEN_INVALID: "configurar-videira", VIDEIRA_NO_SETLIST: "configurar-videira", VIDEIRA_OFFLINE: "problemas-comuns",
+    EDITOR_ALREADY_OPEN: "musica-nao-esta-no-holyrics", EDITOR_UNSUPPORTED: "musica-nao-esta-no-holyrics", EDITOR_FAILED: "musica-nao-esta-no-holyrics", RATE_LIMITED: "musica-nao-esta-no-holyrics",
+    DESTINATION_SUSPECT: "destino-playlist-temporaria", DESTINATION_CHANGED: "destino-playlist-temporaria", SETLIST_CHANGED: "problemas-comuns",
+  };
+
+  // F1: o tópico que explica o que está na tela agora.
+  function contextTopic() {
+    const g = S.dialog, d = S.data;
+    if (g) {
+      if (g.type === "missing") return g.errorCode && g.errorCode !== "HOLYRICS_UNREACHABLE" ? HELP_FOR_CODE[g.errorCode] : g.errorCode ? "configurar-holyrics" : "musica-nao-esta-no-holyrics";
+      if (g.type === "choose") return "musica-ambigua-e-vinculos";
+      if (g.type === "confirm") return d.destination && destSuspect() ? "destino-playlist-temporaria" : "rotina-de-domingo";
+      if (g.type === "removeToken") return "seguranca-dos-tokens";
+      return "problemas-comuns";
+    }
+    if (S.screen === "onboarding") return { holyrics: "configurar-holyrics", videira: "configurar-videira" }[S.onb.step] || "comecar";
+    if (S.screen === "ajuda") return S.help.topic;
+    if (d.error && HELP_FOR_CODE[d.error.code]) return HELP_FOR_CODE[d.error.code];
+    if (S.screen === "culto" && d.destination && destSuspect()) return "destino-playlist-temporaria";
+    return { culto: "rotina-de-domingo", review: "musica-ambigua-e-vinculos", vinculos: d.reconciliation.active ? "trocar-de-computador" : "musica-ambigua-e-vinculos", historico: "problemas-comuns", result: "problemas-comuns", ajustes: "seguranca-dos-tokens", bandeja: "rotina-de-domingo" }[S.screen] || "comecar";
+  }
+
+  // Diagnóstico para suporte (placeholder): versões e estados, nunca tokens.
+  function supportInfo() {
+    const h = S.data.connections.holyrics, v = S.data.connections.videira, hd = h.detail || {};
+    const ua = navigator.userAgent, os = /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "macOS" : "outro";
+    return [
+      "async-videira 0.1.0 (protótipo)",
+      `Sistema: ${os}`,
+      `Holyrics: ${hd.version ? `versão ${hd.version}` : "versão desconhecida"} · porta ${hd.port || 8091} · ${hd.plan === "none" ? "sem Plan" : hd.plan ? "com Plan" : "Plan desconhecido"} · conexão: ${h.status}`,
+      `Videira Music: conexão: ${v.status}`,
+      `Último erro: ${S.data.error ? S.data.error.code : "nenhum"}`,
+      `Tópico da ajuda: ${S.help.topic}`,
+      "Tokens: não incluídos",
+    ].join("\n");
+  }
+
+  function renderHelp() {
+    const q = S.help.query.trim();
+    const terms = MD.norm(q).split(/\s+/).filter(Boolean);
+    const inTitle = (x) => terms.every((t) => x.title.includes(t));
+    const hits = terms.length ? HELP_INDEX.filter((x) => terms.every((t) => x.text.includes(t))).sort((a, b) => inTitle(b) - inTitle(a)).map((x) => x.id) : null;
+    const topic = HELP_BY_ID[S.help.topic] || HELP[0];
+    const catLabel = (HELP_CATS.find(([k]) => k === topic.categoria) || [, ""])[1];
+    const listItem = (t) => `<li><button class="help-topic" data-act="helpTopic" data-arg="${t.id}" ${t.id === topic.id ? 'aria-current="page"' : ""}><span class="grow">${esc(t.titulo)}</span>${t.publico === "tecnico" ? '<span class="xs subtle">Técnico</span>' : ""}</button></li>`;
+    let list;
+    if (hits) {
+      list = hits.length ? `<h2 class="help-cat" id="cat-hits">Resultados</h2><ul class="help-topics" aria-labelledby="cat-hits">${hits.map((id) => listItem(HELP_BY_ID[id])).join("")}</ul>`
+        : `<div class="help-empty"><p class="sm"><strong>Nada encontrado para “${esc(q)}”.</strong></p><p class="sm muted">Tente outra palavra, como “token”, “destino” ou “letra”.</p><p class="sm">${helpLink("problemas-comuns", "Ver problemas comuns")}</p></div>`;
+    } else {
+      list = HELP_CATS.map(([k, l]) => {
+        const ts = HELP.filter((t) => t.categoria === k).sort((a, b) => a.ordem - b.ordem);
+        return ts.length ? `<h2 class="help-cat" id="cat-${k}">${l}</h2><ul class="help-topics" aria-labelledby="cat-${k}">${ts.map(listItem).join("")}</ul>` : "";
+      }).join("");
+    }
+    const r = MD.render(topic.body, HELP_IDS);
+    const toc = r.toc.length > 1 ? `<nav class="help-toc" aria-label="Nesta página"><p class="help-cat">Nesta página</p><ul>${r.toc.map((s) => `<li><button class="ds-link" data-act="helpJump" data-arg="${s.id}">${esc(MD.plain(s.title).trim())}</button></li>`).join("")}</ul></nav>` : "";
+    const related = topic.relacionados.filter((id) => HELP_BY_ID[id]).map((id) => `<li><button class="ds-link" data-act="helpTopic" data-arg="${id}">${esc(HELP_BY_ID[id].titulo)}</button></li>`).join("");
+    const fb = load("help-fb-" + topic.id, "");
+    const aud = topic.publico === "tecnico"
+      ? `<span class="status-chip status-chip--neutral">${icon("settings")}<span class="sr-only">Público: </span>Técnico</span>`
+      : `<span class="status-chip status-chip--info">${icon("music")}<span class="sr-only">Público: </span>Operador</span>`;
+    const r0 = S.helpReturn;
+    const back = r0 || !S.data.configured
+      ? `<button class="ds-button-secondary" data-act="helpBack">${icon("back")}${(r0 ? r0.screen : "onboarding") === "onboarding" ? "Voltar à configuração" : r0.dialog ? "Voltar para onde estava" : "Voltar"}</button>` : "";
+    const count = hits ? (hits.length ? plural(hits.length, "tópico encontrado", "tópicos encontrados") : "Nenhum tópico encontrado") : `${HELP.length} tópicos`;
+
+    return page(`
+      <div class="page-head"><div class="grow"><p class="ds-eyebrow">Funciona sem internet · F1</p><h1 class="ds-h1" tabindex="-1">Ajuda</h1>
+        <p class="lead muted">Respostas curtas para o domingo e guias para quem configura.</p></div>${back}</div>
+      <div class="field help-search" role="search"><label for="help-search">Procurar na ajuda</label>
+        <div class="input-row"><input id="help-search" class="ds-input" type="search" autocomplete="off" spellcheck="false" data-input="helpSearch" value="${esc(S.help.query)}" placeholder="Ex.: token, destino, letra" aria-describedby="help-count" aria-controls="help-nav">${q ? `<button class="ds-button-secondary" data-act="helpClear">Limpar</button>` : ""}</div>
+        <p class="xs subtle" id="help-count" aria-live="polite" style="font-weight:400">${count}</p></div>
+      <div class="help-layout">
+        <nav class="help-nav" id="help-nav" aria-label="Tópicos da ajuda">${list}</nav>
+        <article class="ds-card help-reader" aria-labelledby="help-title">
+          <div class="row-wrap">${aud}<span class="xs subtle" style="font-weight:400">${esc(catLabel)}</span></div>
+          <h2 class="ds-h2 help-title" id="help-title" tabindex="-1">${esc(topic.titulo)}</h2>
+          <div class="help-body">${toc}<div class="md">${r.html}</div></div>
+          ${related ? `<section class="help-related" aria-labelledby="help-rel"><h3 id="help-rel">Veja também</h3><ul>${related}</ul></section>` : ""}
+          <div class="help-foot">
+            <div class="help-fb" role="group" aria-labelledby="fb-q"><span id="fb-q" class="sm"><strong>Esta resposta ajudou?</strong></span>
+              <button class="ds-button-secondary btn-sm" data-act="helpFb" data-arg="yes" aria-pressed="${fb === "yes"}">${fb === "yes" ? icon("check") : ""}Sim</button>
+              <button class="ds-button-secondary btn-sm" data-act="helpFb" data-arg="no" aria-pressed="${fb === "no"}">${fb === "no" ? icon("check") : ""}Não</button>
+              <span class="xs subtle" style="font-weight:400" role="status">${fb === "yes" ? "Obrigado! " : fb === "no" ? "Obrigado. Veja “Problemas comuns” ou copie as informações para suporte. " : ""}A resposta fica só neste computador; nada é enviado.</span></div>
+            <div class="help-support"><button class="ds-button-secondary btn-sm" data-act="helpCopy">${icon("copy")}Copiar informações para suporte</button>
+              ${S.help.copyMsg ? `<span class="xs" role="status">${esc(S.help.copyMsg)}</span>` : ""}
+              <details class="sm" data-toggle="helpDiagOpen" ${S.helpDiagOpen ? "open" : ""}><summary>O que é copiado</summary><pre class="ds-card-muted mono help-diag">${esc(supportInfo())}</pre><p class="xs subtle" style="font-weight:400">Versões e estado das conexões. Os tokens nunca entram.</p></details></div>
+          </div>
+        </article>
+      </div>`);
   }
 
   // ---------------------------------------------------------------- T1 Culto
@@ -260,13 +378,13 @@
     let banners = renderFlash();
 
     if (err && err.code === "HOLYRICS_UNREACHABLE") {
-      banners += callout("danger", "x", "O Holyrics não está respondendo", "Abra o Holyrics neste computador. Se ele já está aberto, confira <strong>Arquivo → Configurações → API Server → Ativar (local)</strong>. Depois de ativar, espere uns 15 segundos.", `<button class="ds-button btn-sm" data-act="retryHolyrics">${icon("refresh")}Tentar de novo</button>${techDetails(err)}`, "alert");
+      banners += callout("danger", "x", "O Holyrics não está respondendo", "Abra o Holyrics neste computador. Se ele já está aberto, confira <strong>Arquivo → Configurações → API Server → Ativar (local)</strong>. Depois de ativar, espere uns 15 segundos.", `<button class="ds-button btn-sm" data-act="retryHolyrics">${icon("refresh")}Tentar de novo</button>${helpLink("configurar-holyrics")}${techDetails(err)}`, "alert");
     } else if (err && err.code === "HOLYRICS_TOKEN_INVALID") {
-      banners += callout("danger", "x", "O Holyrics não aceita mais o token", "Ele pode ter sido apagado em <strong>Gerenciar permissões</strong> no Holyrics. Crie um novo e cole em Ajustes.", `<button class="ds-button btn-sm" data-act="go" data-arg="ajustes">Trocar token</button>${techDetails(err)}`, "alert");
+      banners += callout("danger", "x", "O Holyrics não aceita mais o token", "Ele pode ter sido apagado em <strong>Gerenciar permissões</strong> no Holyrics. Crie um novo e cole em Ajustes.", `<button class="ds-button btn-sm" data-act="go" data-arg="ajustes">Trocar token</button>${helpLink("configurar-holyrics")}${techDetails(err)}`, "alert");
     } else if (err && err.code === "HOLYRICS_PERMISSION_MISSING") {
-      banners += callout("danger", "shield", "Falta permissão no Holyrics", `Abrimos um pedido no Holyrics: clique em <strong>Permitir</strong> na janela que apareceu lá. Falta: <code class="mono">${esc(err.params.missing.join(", "))}</code>.`, `<button class="ds-button btn-sm" data-act="retryHolyrics">${icon("refresh")}Verificar de novo</button>`, "alert");
+      banners += callout("danger", "shield", "Falta permissão no Holyrics", `Abrimos um pedido no Holyrics: clique em <strong>Permitir</strong> na janela que apareceu lá. Falta: <code class="mono">${esc(err.params.missing.join(", "))}</code>.`, `<button class="ds-button btn-sm" data-act="retryHolyrics">${icon("refresh")}Verificar de novo</button>${helpLink("configurar-holyrics")}`, "alert");
     } else if (err && err.code === "VIDEIRA_TOKEN_INVALID") {
-      banners += callout("danger", "x", "O Videira Music recusou o token", "Ele pode ter sido revogado. Peça um novo a quem administra a igreja no Videira Music e cole em Ajustes.", `<button class="ds-button btn-sm" data-act="go" data-arg="ajustes">Trocar token</button>${techDetails(err)}`, "alert");
+      banners += callout("danger", "x", "O Videira Music recusou o token", "Ele pode ter sido revogado. Peça um novo a quem administra a igreja no Videira Music e cole em Ajustes.", `<button class="ds-button btn-sm" data-act="go" data-arg="ajustes">Trocar token</button>${helpLink("configurar-videira")}${techDetails(err)}`, "alert");
     }
     if (!err && d.connections.holyrics.status === "notConfigured") {
       banners += callout("danger", "x", "Falta o token do Holyrics", "Sem ele o app não lê a biblioteca nem muda a playlist.", `<button class="ds-button btn-sm" data-act="swapToken" data-arg="holyrics">Colar token</button>`, "alert");
@@ -278,7 +396,7 @@
       banners += callout("warn", "alert", "Sem conexão com o Videira Music", `Usando o setlist baixado ${esc(fmtDay(d.setlistCachedAt))}, às ${esc(fmtTime(d.setlistCachedAt))}. Se ele mudou depois, a mudança não aparece aqui. O aviso ao Videira será enviado quando a internet voltar.`, `<button class="ds-button-secondary btn-sm" data-act="retryVideira">${icon("refresh")}Tentar de novo</button>`);
     }
     if (d.reconciliation.active && !S.recon.done) {
-      banners += callout("info", "info", "A biblioteca de músicas do Holyrics mudou", `Parece que o Holyrics foi reinstalado ou as músicas foram importadas de novo. ${d.reconciliation.affectsCurrentSetlist ? `${plural(d.items.filter((i) => i.staleLink).length, "música deste culto precisa", "músicas deste culto precisam")} ser vinculadas outra vez.` : "Isso não afeta o culto de domingo."} Nenhum vínculo antigo é apagado.`, `<button class="ds-button-secondary btn-sm" data-act="go" data-arg="vinculos">Revisar vínculos</button>`);
+      banners += callout("info", "info", "A biblioteca de músicas do Holyrics mudou", `Parece que o Holyrics foi reinstalado ou as músicas foram importadas de novo. ${d.reconciliation.affectsCurrentSetlist ? `${plural(d.items.filter((i) => i.staleLink).length, "música deste culto precisa", "músicas deste culto precisam")} ser vinculadas outra vez.` : "Isso não afeta o culto de domingo."} Nenhum vínculo antigo é apagado.`, `<button class="ds-button-secondary btn-sm" data-act="go" data-arg="vinculos">Revisar vínculos</button>${helpLink("trocar-de-computador")}`);
     }
 
     if (err && err.code === "VIDEIRA_NO_SETLIST") {
@@ -286,7 +404,7 @@
         <div class="page-head"><div><p class="ds-eyebrow">Próximo culto</p><h1 class="ds-h1" tabindex="-1">Nenhum culto publicado ainda</h1>
         <p class="lead muted">Quando o setlist de domingo for publicado no Videira Music, ele aparece aqui.</p></div></div>
         ${banners}
-        <div class="ds-card-muted">Quem publica é a liderança de louvor, no Videira Music. O app procura de novo sozinho no domingo às ${esc(S.reminder.time)}.</div>`, actionBar(primaryForCulto()));
+        <div class="ds-card-muted">Quem publica é a liderança de louvor, no Videira Music. O app procura de novo sozinho no domingo às ${esc(S.reminder.time)}. ${helpLink("configurar-videira", "Por que o setlist não aparece?")}</div>`, actionBar(primaryForCulto()));
     }
 
     const s = d.setlist;
@@ -324,9 +442,9 @@
     const temp = dest.kind === "temporary";
     const typeLabel = temp ? "Playlist temporária" : dest.type === "event" ? "Evento da agenda" : "Culto da agenda";
     let check;
-    if (temp) check = `${toneChip("neutral", "info", "Sem data para conferir")}<p class="sm muted" style="margin-top:.5rem">É a playlist aberta no Holyrics agora. Ela não tem data de culto, então o app não consegue conferir se é a certa: você confirma antes de substituir.</p>`;
+    if (temp) check = `${toneChip("neutral", "info", "Sem data para conferir")}<p class="sm muted" style="margin-top:.5rem">É a playlist aberta no Holyrics agora. Ela não tem data de culto, então o app não consegue conferir se é a certa: você confirma antes de substituir.</p>${helpLink("destino-playlist-temporaria")}`;
     else if (dest.check === "match") check = toneChip("ok", "check", "Mesmo dia do setlist");
-    else if (dest.check === "dateMismatch") check = callout("warn", "alert", `O culto selecionado é de ${esc(fmtDate(dest.datetime).slice(0, 5))}, o setlist é de ${esc(fmtDate(S.data.setlist.eventAt).slice(0, 5))}`, "Confira se é o culto certo. Se não for, selecione o culto certo no Holyrics.");
+    else if (dest.check === "dateMismatch") check = callout("warn", "alert", `O culto selecionado é de ${esc(fmtDate(dest.datetime).slice(0, 5))}, o setlist é de ${esc(fmtDate(S.data.setlist.eventAt).slice(0, 5))}`, "Confira se é o culto certo. Se não for, selecione o culto certo no Holyrics.", helpLink("destino-playlist-temporaria"));
     const count = dest.currentItems.length ? `${plural(dest.currentItems.length, "música", "músicas")} na playlist agora` : "playlist vazia agora";
     return `
       <section class="ds-card stack-sm dest-card" aria-labelledby="dest-h">
@@ -364,10 +482,11 @@
     } else {
       list = `<ol class="song-list">${items.map(renderSongRow).join("")}</ol>`;
     }
+    const noLyrics = items.filter((i) => i.state === "ready" && i.lyricsPlaceholder).length;
     return `
       <div class="songs-sticky">
         <div class="row between" style="flex-wrap:wrap"><h2 class="ds-h2" id="songs-h">Músicas do setlist</h2>${toggle}</div>
-        <div class="summary" style="margin-top:.5rem" aria-live="polite"><strong>${c.ready} de ${counted} ${counted === 1 ? "música pronta" : "músicas prontas"}</strong><span class="row-wrap">${chips}</span></div>
+        <div class="summary" style="margin-top:.5rem" aria-live="polite"><strong>${c.ready} de ${counted} ${counted === 1 ? "música pronta" : "músicas prontas"}</strong><span class="row-wrap">${chips}${noLyrics ? toneChip("warn", "alert", noLyrics === 1 ? "1 sem letra" : `${noLyrics} sem letra`) : ""}</span></div>
       </div>
       ${list}`;
   }
@@ -385,13 +504,15 @@
     } else if (it.state === "missing") {
       support = "Precisa ser cadastrada no Holyrics antes.";
       action = `<button class="ds-button-secondary btn-sm" data-act="openMissing" data-arg="${it.position}">Como resolver</button>`;
+    } else if (it.state === "ready" && it.lyricsPlaceholder) {
+      support = `Letra ainda é ${PLACEHOLDER} no Holyrics: troque antes do culto.`;
     } else if (it.state === "repeated") {
       support = `Já está na posição ${it.repeatOf + 1}. O Holyrics não aceita a mesma música duas vezes na playlist.`;
     }
     return `<li class="song-row ${it.state === "repeated" ? "is-repeated" : ""}" aria-label="Posição ${it.position + 1}, ${esc(it.song.title)}, ${esc(it.song.artist)}, ${meta.label}">
       <span class="song-pos" aria-hidden="true">${it.position + 1}</span>
-      <div><p class="song-title">${esc(it.song.title)}</p><p class="song-meta">${it.state === "ready" ? esc(it.song.artist) : `${esc(it.song.artist)} · ${support}`}</p></div>
-      ${it.approximate && it.state === "chooseVersion" ? chip(it.state, "Conferir parecida") : chip(it.state)}
+      <div><p class="song-title">${esc(it.song.title)}</p><p class="song-meta">${it.state === "ready" && !it.lyricsPlaceholder ? esc(it.song.artist) : `${esc(it.song.artist)} · ${support}`}</p></div>
+      ${it.lyricsPlaceholder && it.state === "ready" ? toneChip("warn", "alert", "Pronta — sem letra") : it.approximate && it.state === "chooseVersion" ? chip(it.state, "Conferir parecida") : chip(it.state)}
       <span class="action-slot">${action}</span>
     </li>`;
   }
@@ -477,24 +598,11 @@
       return dialogShell(it.approximate ? `“${esc(it.song.title)}” é esta música?` : `Qual “${esc(it.song.title)}” é a do setlist?`,
         `<p class="sm muted">No Videira: <strong>${esc(it.song.title)}</strong> — ${esc(it.song.artist)}. ${it.approximate ? "No Holyrics achamos uma com nome parecido, mas não igual. Confira antes de vincular:" : `No Holyrics há ${it.candidates.length} com este nome:`}</p>
          <fieldset style="border:0;padding:0;margin:0" class="stack-sm"><legend class="sr-only">Versões no Holyrics</legend>${opts}
-         <label class="radio-card"><input type="radio" name="pick" value="none" data-change="pickCandidate" ${g.pick === "none" ? "checked" : ""}><div><strong>Nenhuma destas</strong><div class="sm muted">A música fica como “Não está no Holyrics”.</div></div></label></fieldset>`,
+         <label class="radio-card"><input type="radio" name="pick" value="none" data-change="pickCandidate" ${g.pick === "none" ? "checked" : ""}><div><strong>Nenhuma destas</strong><div class="sm muted">A música fica como “Não está no Holyrics”.</div></div></label></fieldset>
+         <p class="sm">${helpLink("musica-ambigua-e-vinculos")}</p>`,
         `<span class="why">${g.pick ? "" : "Escolha uma opção."}</span><button class="ds-button-secondary" data-act="closeDialog">Cancelar</button><button class="ds-button" data-act="confirmChoose" ${g.pick ? "" : "disabled"}>${g.pick === "none" ? "Marcar como não encontrada" : it.approximate ? "Usar esta música" : "Usar esta versão"}</button>`);
     }
-    if (g.type === "missing") {
-      const it = item(g.pos);
-      const status = g.reread === "reading" ? `<p class="sm" role="status">Lendo a biblioteca do Holyrics…</p>`
-        : g.reread === "notFound" ? callout("warn", "alert", `Ainda não encontramos “${esc(it.song.title)}”`, "Confira se salvou a música no Holyrics com o mesmo nome e artista.", "", "status") : "";
-      const results = g.search != null ? `<div class="field"><label for="lib-search">Procurar na biblioteca do Holyrics</label><input id="lib-search" class="ds-input" data-input="libSearch" value="${esc(g.search)}" placeholder="Nome ou artista"></div>
-        <ul class="list-rows">${librarySearch(g.search).map((s) => `<li><div class="grow"><strong>${esc(s.title)}</strong><div class="sm muted">${esc(s.artist)}</div></div><button class="ds-button-secondary btn-sm" data-act="linkManual" data-arg="${esc(s.id)}">Usar esta</button></li>`).join("") || `<li class="muted sm">Nenhuma música parecida.</li>`}</ul>` : "";
-      return dialogShell(`“${esc(it.song.title)}” não está no Holyrics`,
-        `<p class="sm muted">O app não cria músicas no Holyrics. Cadastre por um destes caminhos e depois leia a biblioteca de novo:</p>
-         <ol class="instructions">
-           <li><div><strong>Abrir o editor do Holyrics já com o nome.</strong> Você cola a letra e clica em Salvar lá.<div style="margin-top:.5rem"><button class="ds-button-secondary btn-sm" data-act="openEditor" data-autofocus>${icon("external")}Abrir no Holyrics</button></div>${g.editorOpened ? `<p class="sm" role="status" style="margin-top:.5rem">${icon("check")} Abrimos o editor no Holyrics com “${esc(it.song.title)}” preenchido.</p>` : ""}</div></li>
-           <li><div><strong>Importar um arquivo</strong> (TXT, OpenLP ou OpenSong) se você tem a letra: no Holyrics, Arquivo → Importar.</div></li>
-           <li><div><strong>Já está no Holyrics com outro nome?</strong> <button class="ds-link" data-act="openSearch">Procurar na biblioteca</button></div></li>
-         </ol>${results}${status}`,
-        `<button class="ds-button-secondary" data-act="closeDialog">Fechar</button><button class="ds-button" data-act="reread" ${g.reread === "reading" ? "disabled" : ""}>${g.reread === "reading" ? "Lendo…" : "Ler a biblioteca de novo"}</button>`);
-    }
+    if (g.type === "missing") return renderMissing(g, item(g.pos));
     if (g.type === "confirm") return renderConfirm(g);
     if (g.type === "restore") {
       const before = S.result.originalPlaylist.length, after = S.result.playlistNow.length;
@@ -509,6 +617,116 @@
         `<button class="ds-button-secondary" data-act="closeDialog" data-autofocus>Cancelar</button><button class="ds-button-danger" data-act="doRemoveToken">Remover token</button>`);
     }
     return "";
+  }
+
+  // ---------------------------------------------------------------- T2b Não está no Holyrics → editor → reler → vincular
+  // g.editor: null | "opening" | "requested" (pedido opaco) | "askConfirm" | "opened" | "notOpened" | "error"
+  // g.reread: null | "reading" | "created" | "placeholder" | "notFound" | "ambiguous"  (= song.awaitCreated + checagem de letra)
+  const PLACEHOLDER = "[Letra não fornecida]";
+  const EDITOR_ERRORS = {
+    EDITOR_ALREADY_OPEN: ["Já tem um editor de música aberto no Holyrics", "Salve ou feche essa janela no Holyrics e clique em Tentar de novo."],
+    EDITOR_UNSUPPORTED: ["Esta versão do Holyrics não abre o editor por aqui", "Cadastre pelo próprio Holyrics (nova música) ou importe um arquivo; depois leia a biblioteca de novo."],
+    RATE_LIMITED: ["O Holyrics pediu para esperar um pouco", "Espere 2 segundos e tente de novo."],
+    HOLYRICS_UNREACHABLE: ["O Holyrics não respondeu", "Confira se o Holyrics está aberto e se Arquivo → Configurações → API Server → Ativar (local) está marcado."],
+    EDITOR_FAILED: ["O Holyrics não abriu o editor", "Tente de novo. Se continuar, cadastre a música pelo próprio Holyrics."],
+  };
+
+  function renderMissing(g, it) {
+    const t = esc(it.song.title), a = esc(it.song.artist);
+    const cooling = Date.now() < (S.editorCooldownUntil || 0);
+    const busyOpen = g.editor === "opening" || cooling;
+    const openLabel = g.editor === "opening" ? "Abrindo…" : cooling ? "Aguarde…" : (g.editor ? "Abrir de novo no Holyrics" : "Abrir no Holyrics");
+    let editorState = "";
+    if (g.editor === "requested" || g.editor === "askConfirm") {
+      editorState = callout("info", "external", "Pedimos ao Holyrics para abrir o editor — olhe a janela do Holyrics", `Deve aparecer “Nova música” com “${t}” e ${a} preenchidos.`,
+        g.editor === "askConfirm" ? `<p style="flex-basis:100%;font-weight:700;margin:0">O editor abriu?</p><button class="ds-button-secondary btn-sm" data-act="editorConfirm" data-arg="yes" data-autofocus>Sim, abriu</button><button class="ds-button-secondary btn-sm" data-act="editorConfirm" data-arg="no">Não abriu</button>` : "", "status");
+    } else if (g.editor === "opened") {
+      editorState = callout("ok", "check", "O editor abriu no Holyrics", `${g.confirmedBy === "status" ? "O Holyrics confirmou. " : ""}Cole a letra, troque o texto ${PLACEHOLDER} e clique em Salvar lá. Depois volte aqui.`, "", "status");
+    } else if (g.editor === "notOpened") {
+      editorState = callout("warn", "alert", "O editor não abriu", "", `<ul style="flex-basis:100%;list-style:disc;padding-left:1.25rem;font-size:.875rem">
+          <li><strong>Holyrics fechado?</strong> Abra o Holyrics neste computador.</li>
+          <li><strong>API desligada?</strong> Arquivo → Configurações → API Server → marque Ativar (local).</li>
+          <li><strong>Já tem um editor de música aberto?</strong> Salve ou feche essa janela no Holyrics.</li></ul>
+        ${helpLink("musica-nao-esta-no-holyrics")}
+        <button class="ds-button-secondary btn-sm" data-act="openEditor">${icon("refresh")}Tentar de novo</button>`, "alert");
+    } else if (g.editor === "error") {
+      const [title, body] = EDITOR_ERRORS[g.errorCode] || EDITOR_ERRORS.EDITOR_FAILED;
+      editorState = callout(g.errorCode === "RATE_LIMITED" ? "info" : "warn", "alert", title, body, `<button class="ds-button-secondary btn-sm" data-act="openEditor">${icon("refresh")}Tentar de novo</button>${helpLink(HELP_FOR_CODE[g.errorCode] || "musica-nao-esta-no-holyrics")}`, "alert");
+    }
+
+    const placeholderWarn = callout("warn", "alert", `No Holyrics, troque o texto ${PLACEHOLDER} pela letra antes de salvar`, "O app não tem a letra desta música, então o editor abre com essa frase no lugar dela. Se salvar assim, ela aparece no telão.");
+
+    let result = "";
+    const expected = `<div class="ds-card-muted mono" style="color:inherit;margin-top:.5rem">Título: ${t}<br>Artista: ${a}</div>`;
+    if (g.reread === "reading") result = `<p class="sm" role="status">Lendo a biblioteca do Holyrics…</p>`;
+    else if (g.reread === "created" || g.reread === "placeholder") {
+      const f = g.found;
+      result = `${g.reread === "created"
+          ? callout("ok", "check", "Encontramos a música nova no Holyrics", "Confira e confirme o vínculo. Ele fica salvo no Videira Music.", "", "status")
+          : callout("warn", "alert", `“${t}” foi salva, mas a letra ainda é ${PLACEHOLDER}`, "Se publicar assim, essa frase aparece no telão. No Holyrics, procure a música na biblioteca, abra para editar, troque o texto pela letra e salve. Depois clique em Ler de novo.",
+              `<details class="sm" style="flex-basis:100%"><summary>Por que o app não abre essa música para editar?</summary><p style="margin-top:.25rem">Por aqui o Holyrics só abre o editor de <strong>música nova</strong>. Abrir de novo criaria uma segunda cópia, e aí ficariam duas “${t}” na biblioteca.</p></details>`, "alert")}
+        <div class="review-item"><div class="pair">
+          <div class="side"><small>Videira</small><strong>${t}</strong><div class="sm muted">${a}</div></div>
+          <span aria-hidden="true" class="muted">${icon("arrow")}</span>
+          <div class="side"><small>Holyrics · nova</small><strong>${esc(f.title)}</strong><div class="sm muted">${esc(f.artist)}</div>${g.reread === "placeholder" ? `<div class="xs" style="color:hsl(var(--color-warning));margin-top:.25rem">Letra: ${PLACEHOLDER}</div>` : ""}</div>
+        </div></div>`;
+    } else if (g.reread === "notFound") {
+      result = callout("warn", "alert", `Ainda não encontramos uma música nova chamada “${t}”`, "Confira se clicou em Salvar no Holyrics e se o título e o artista estão exatamente assim (acentos e maiúsculas não importam; pontuação importa):", expected, "status");
+    } else if (g.reread === "ambiguous") {
+      result = `${callout("warn", "diamond", `Encontramos ${g.candidates.length} músicas novas chamadas “${t}”`, "Talvez tenha sido salva duas vezes. Escolha qual vincular; a outra pode ser apagada depois no Holyrics.", "", "status")}
+        <fieldset style="border:0;padding:0;margin:0" class="stack-sm"><legend class="sr-only">Músicas novas no Holyrics</legend>${g.candidates.map((c, idx) => `<label class="radio-card"><input type="radio" name="newpick" value="${esc(c.id)}" data-change="pickNew" ${g.pick === c.id ? "checked" : ""} ${idx === 0 ? "data-autofocus" : ""}>
+          <div><strong>${esc(c.title)}</strong> — ${esc(c.artist)}<div class="sm muted">Salva hoje às ${esc(c.savedAt)} · <span class="mono">${esc(c.id)}</span></div></div></label>`).join("")}</fieldset>`;
+    }
+
+    const results = g.search != null ? `<div class="field"><label for="lib-search">Procurar na biblioteca do Holyrics</label><input id="lib-search" class="ds-input" data-input="libSearch" value="${esc(g.search)}" placeholder="Nome ou artista"></div>
+        <ul class="list-rows">${librarySearch(g.search).map((s) => `<li><div class="grow"><strong>${esc(s.title)}</strong><div class="sm muted">${esc(s.artist)}</div></div><button class="ds-button-secondary btn-sm" data-act="linkManual" data-arg="${esc(s.id)}">Usar esta</button></li>`).join("") || `<li class="muted sm">Nenhuma música parecida.</li>`}</ul>` : "";
+
+    const modeNote = S.holyricsReal ? `<p class="xs subtle" style="font-weight:400">Protótipo em modo Holyrics real: o botão chama ${esc(S.holyricsUrl)}/api/popup-createsong. A releitura da biblioteca continua simulada.</p>` : "";
+
+    let primary;
+    if (g.reread === "created") primary = `<button class="ds-button" data-act="confirmCreated" data-autofocus>Confirmar vínculo</button>`;
+    else if (g.reread === "ambiguous") primary = `<button class="ds-button" data-act="confirmCreated" ${g.pick ? "" : "disabled"}>Usar esta versão</button>`;
+    else primary = `<button class="ds-button" data-act="reread" ${g.editor ? "data-autofocus" : ""} ${g.reread === "reading" ? "disabled" : ""}>${g.reread === "reading" ? "Lendo…" : g.reread ? "Ler de novo" : "Ler a biblioteca de novo"}</button>`;
+    const secondary = g.reread === "placeholder" ? `<button class="ds-button-secondary" data-act="confirmCreated">Vincular mesmo assim</button>` : "";
+    const why = g.reread === "ambiguous" && !g.pick ? "Escolha uma das músicas." : g.reread === "placeholder" ? "A letra continua faltando se vincular agora." : "";
+
+    return dialogShell(`“${t}” não está no Holyrics`, `
+      <p class="sm muted">O app não cria músicas sozinho: ele abre o editor do Holyrics já com o nome, e você salva lá. ${helpLink("musica-nao-esta-no-holyrics")}</p>
+      <ol class="instructions">
+        <li><div class="grow stack-sm"><div><strong>Abrir o editor do Holyrics já com o nome</strong></div>
+          <div><button class="ds-button-secondary btn-sm" data-act="openEditor" ${g.editor ? "" : "data-autofocus"} ${busyOpen ? "disabled" : ""}>${icon("external")}${openLabel}</button></div>
+          ${editorState}${modeNote}</div></li>
+        <li><div class="grow stack-sm"><div><strong>No Holyrics: cole a letra e clique em Salvar</strong></div>${placeholderWarn}</div></li>
+        <li><div><strong>Volte aqui e leia a biblioteca de novo</strong> — vamos procurar “${t}” de ${a} entre as músicas novas.</div></li>
+      </ol>
+      ${result}
+      <details class="sm"><summary>Outros caminhos</summary><div class="stack-sm" style="margin-top:.25rem">
+        <p><strong>Importar um arquivo</strong> (TXT, OpenLP ou OpenSong) se você tem a letra: no Holyrics, Arquivo → Importar.</p>
+        <p><strong>Já está no Holyrics com outro nome?</strong> <button class="ds-link" data-act="openSearch">Procurar na biblioteca</button></p>
+        ${results}</div></details>`,
+      `<span class="why">${why}</span><button class="ds-button-secondary" data-act="closeDialog">Fechar</button>${secondary}${primary}`, true);
+  }
+
+  // Modo demo real (?holyrics=real, servido por http). No app final isto vai pelo processo principal (song.openEditor).
+  async function requestHolyricsEditor(song) {
+    const url = new URL(S.holyricsUrl);
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) return { kind: "error", code: "EDITOR_FAILED" };
+    const endpoint = `${url.origin}/api/popup-createsong`;
+    const body = JSON.stringify({ title: song.title, artist: song.artist, lyrics: PLACEHOLDER });
+    try {
+      // 1º: CORS normal. O Holyrics responde Access-Control-Allow-Origin: * e exige Content-Type EXATAMENTE application/json (senão 415).
+      const r = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(5000) });
+      const map = { 400: "EDITOR_FAILED", 403: "EDITOR_FAILED", 404: "EDITOR_UNSUPPORTED", 409: "EDITOR_ALREADY_OPEN", 415: "EDITOR_FAILED", 429: "RATE_LIMITED" };
+      return r.ok ? { kind: "opened" } : { kind: "error", code: map[r.status] || "EDITOR_FAILED", status: r.status };
+    } catch {
+      try {
+        // 2º: reserva opaca (no-cors só permite text/plain; o status não é legível e pode ter sido 415).
+        await fetch(endpoint, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" }, body, signal: AbortSignal.timeout(5000) });
+        return { kind: "opaque" };
+      } catch {
+        return { kind: "error", code: "HOLYRICS_UNREACHABLE" };
+      }
+    }
   }
 
   function librarySearch(q) {
@@ -547,11 +765,13 @@
         <div class="diff-col"><h3>Vai ficar (${after.length})</h3>${col("allAfter", after, (s, i) => `<li><span class="n">${i + 1}</span><span><strong>${esc(s.song.title)}</strong><br><span class="xs subtle" style="font-weight:400">${esc(s.song.artist)}</span></span></li>`)}</div>
       </div>
       ${repeated.length ? `<p class="sm muted">${icon("repeat")} ${repeated.map((r) => `“${esc(r.song.title)}”`).join(", ")} aparece 1 vez (estava repetida no setlist).</p>` : ""}
+      ${after.filter((i) => i.lyricsPlaceholder).map((i) => callout("warn", "alert", `“${esc(i.song.title)}” ainda está sem letra no Holyrics`, `O texto ${PLACEHOLDER} vai aparecer no telão. Troque pela letra no Holyrics antes do culto.`)).join("")}
       ${d.setlistSource === "cache" ? `<p class="sm muted">${icon("info")} Sem internet: usando o setlist baixado ${esc(fmtShort(d.setlistCachedAt))}. O aviso ao Videira será enviado depois.</p>` : ""}
       ${needPartial ? `<label class="check ds-card-muted" style="color:inherit"><input type="checkbox" data-change="ackPartial" ${g.ackPartial ? "checked" : ""}><span>Publicar mesmo sem: <strong>${out.map((o) => esc(o.song.title)).join(", ")}</strong><br><span class="sm muted">${out.length === 1 ? "Ela fica" : "Elas ficam"} fora da playlist até você resolver.</span></span></label>` : ""}
       ${needDest ? `<label class="check ds-card-muted" style="color:inherit"><input type="checkbox" data-change="ackDest" ${g.ackDest ? "checked" : ""}>${temp
         ? `<span><strong>Estou no culto certo</strong><br><span class="sm muted">A playlist temporária não tem data, então o app não consegue conferir. Olhe no Holyrics se é a playlist que vai para o telão agora.</span></span>`
-        : `<span>Confirmo que <strong>${esc(d.destination.name)}</strong> é o destino certo<br><span class="sm muted">A data do culto selecionado é diferente da data do setlist.</span></span>`}</label>` : ""}`,
+        : `<span>Confirmo que <strong>${esc(d.destination.name)}</strong> é o destino certo<br><span class="sm muted">A data do culto selecionado é diferente da data do setlist.</span></span>`}</label>
+        <p class="sm">${helpLink("destino-playlist-temporaria")}</p>` : ""}`,
       `<span class="why">${why}</span><button class="ds-button-secondary" data-act="closeDialog" data-autofocus>Cancelar</button><button class="ds-button-danger" data-act="apply" ${blocked ? "disabled" : ""}>${icon("alert")}Substituir playlist</button>`, true);
   }
 
@@ -797,7 +1017,8 @@
     if (o.step === "welcome") {
       inner = `<p class="ds-eyebrow">Primeira configuração</p><h1 class="ds-h1" tabindex="-1">Vamos ligar o Videira Music ao Holyrics</h1>
         <p class="muted">Leva uns 5 minutos e só precisa ser feito uma vez neste computador.</p>${stepper}
-        <div class="ds-card-muted" style="color:inherit"><strong>Você vai precisar de:</strong><ul style="list-style:disc;padding-left:1.25rem;margin-top:.5rem"><li>Holyrics aberto neste computador</li><li>Alguém com acesso de administrador da igreja no Videira Music</li></ul></div>`;
+        <div class="ds-card-muted" style="color:inherit"><strong>Você vai precisar de:</strong><ul style="list-style:disc;padding-left:1.25rem;margin-top:.5rem"><li>Holyrics aberto neste computador</li><li>Alguém com acesso de administrador da igreja no Videira Music</li></ul></div>
+        <p class="sm">${helpLink("comecar", "Como o app funciona")} · ${helpLink("configurar-holyrics", "Guia do técnico: configurar o Holyrics")}</p>`;
       bar = actionBar({ label: "Começar", act: "onbGo", arg: "holyrics" });
     } else if (o.step === "holyrics") {
       const t = o.hTest;
@@ -812,6 +1033,7 @@
           <li><span>Clique em <strong>Gerenciar permissões → Criar token</strong> e dê o nome <strong>async-videira</strong>.</span></li>
           <li><span>Na coluna <strong>Local</strong>, marque só as permissões da lista abaixo. Deixe <strong>Web</strong> desmarcado.</span></li>
           <li><span>Copie o token e cole aqui.</span></li></ol>
+        <p class="sm">${helpLink("configurar-holyrics", "Ajuda: configurar o Holyrics passo a passo")}</p>
         <details class="ds-card-muted" style="color:inherit"><summary>Permissões necessárias (${D.REQUIRED_PERMISSIONS.length})</summary>
           <p class="sm muted">Estes nomes aparecem iguais no Holyrics. Não marque outras: o app não precisa.</p>
           <div class="perm-list">${D.REQUIRED_PERMISSIONS.map((p) => `<code class="${t && t.missing && t.missing.includes(p) ? "missing" : ""}">${p}</code>`).join("")}</div>
@@ -822,7 +1044,7 @@
           ${o.err.h ? `<p class="error" id="h-err">${icon("x")}${esc(o.err.h)}</p>` : ""}</div>
         <details><summary>Porta (avançado)</summary><div class="field" style="max-width:10rem"><label for="h-port">Porta</label><input id="h-port" class="ds-input mono" value="8091" inputmode="numeric"></div></details>
         <div aria-live="polite">${res}</div>
-        ${callout("info", "shield", "O Holyrics aceita conexões de outros aparelhos da rede", "O servidor do Holyrics fica disponível para a rede da igreja, sem criptografia. Este app só conversa com o próprio computador, mas outros aparelhos na mesma rede Wi-Fi poderiam usar o token. Use uma rede confiável (não a rede de visitantes) e não compartilhe o token.", `<button class="ds-link">Saiba como bloquear no firewall</button>`)}`;
+        ${callout("info", "shield", "O Holyrics aceita conexões de outros aparelhos da rede", "O servidor do Holyrics fica disponível para a rede da igreja, sem criptografia. Este app só conversa com o próprio computador, mas outros aparelhos na mesma rede Wi-Fi poderiam usar o token. Use uma rede confiável (não a rede de visitantes) e não compartilhe o token.", `<button class="ds-link" data-act="help" data-arg="seguranca-dos-tokens">Saiba como bloquear no firewall</button>`)}`;
       bar = t && t.result === "ok" ? actionBar({ label: "Continuar", act: "onbGo", arg: "videira" }, `<button class="ds-button-secondary" data-act="onbGo" data-arg="welcome">Voltar</button>`)
         : actionBar({ label: o.testing === "h" ? "Testando…" : "Testar conexão", act: "testHolyrics", disabled: o.testing === "h" }, `<button class="ds-button-secondary" data-act="onbGo" data-arg="welcome">Voltar</button>`);
     } else if (o.step === "videira") {
@@ -863,6 +1085,9 @@
       ${S.protoOpen ? `<aside class="proto-panel" id="proto-panel" aria-label="Cenários do protótipo (não faz parte do app)">
         <p class="sm muted">Controles só do protótipo — não fazem parte do app.</p>
         ${Object.entries(groups).map(([g, list]) => `<h2>${esc(g)}</h2>${list.map(([k, v]) => `<button data-act="scenario" data-arg="${k}" aria-pressed="${S.scenario === k}">${esc(v.label)}</button>`).join("")}`).join("")}
+        <h2>Holyrics de verdade</h2>
+        <button data-act="toggleRealHolyrics" aria-pressed="${S.holyricsReal}">${S.holyricsReal ? "✓ " : ""}Abrir o editor no Holyrics real (${esc(S.holyricsUrl)})</button>
+        <p class="xs subtle" style="font-weight:400;margin-top:.25rem">${S.realMsg ? esc(S.realMsg) : "Só o botão “Abrir no Holyrics” vai ao Holyrics real; o resto continua simulado. Precisa de http (node scripts/serve-prototype.mjs)."}</p>
         <h2>Atalhos</h2>
         <button data-act="go" data-arg="bandeja">Bandeja e notificações</button>
         <button data-act="fillTokens">Preencher tokens de exemplo (pareamento)</button>
@@ -873,6 +1098,7 @@
   // ---------------------------------------------------------------- ações
   const A = {
     go(arg) {
+      if (arg === "ajuda" || S.screen === "ajuda") S.helpReturn = null;
       if (!S.data.configured && arg !== "onboarding") return;
       if (arg === "culto" && S.screen === "result") A.finish();
       S.screen = arg; S.flash = arg === "review" || arg === "culto" ? S.flash : null; S.settingsMsg = null; S.reportMsg = null; S.restoreMsg = null;
@@ -921,8 +1147,45 @@
       else { const c = it.candidates.find((x) => x.id === S.dialog.pick); it.state = "ready"; it.holyrics = c; it.matchedBy = "externalId"; S.flash = { title: `“${it.song.title}” vinculada.`, undo: snap }; S.sessionLinks.unshift({ title: it.song.title, artist: it.song.artist, holyricsId: c.id, since: nowIso(), source: "individual" }); }
       S.dialog = null; render(); announce(S.flash.title);
     },
-    openMissing(arg) { S.dialog = { type: "missing", pos: arg, reread: null, tries: 0, search: null, editorOpened: false }; render(); },
-    openEditor() { S.dialog.editorOpened = true; render(); },
+    openMissing(arg) { S.dialog = newMissingDialog(arg); render(); },
+    async openEditor() {
+      const g = S.dialog, it = S.data.items.find((i) => i.position === Number(g.pos));
+      if (Date.now() < (S.editorCooldownUntil || 0)) return;
+      g.editor = "opening"; g.errorCode = null; render();
+      S.editorCooldownUntil = Date.now() + 2000; // o Holyrics aceita 1 chamada a cada 2 s
+      setTimeout(() => { if (S.dialog === g) render(); }, 2050);
+      let r;
+      if (S.holyricsReal) r = await requestHolyricsEditor(it.song);
+      else { await sleep(600); r = g.simEditor === "opaque" ? { kind: "opaque" } : g.simEditor && g.simEditor !== "opened" ? { kind: "error", code: g.simEditor } : { kind: "opened" }; }
+      if (S.dialog !== g) return;
+      g.previousCatalogTaken = true; // no app real: snapshot GetSongs ANTES de abrir, para song.awaitCreated
+      if (r.kind === "opened") { g.editor = "opened"; g.confirmedBy = "status"; announce("O editor abriu no Holyrics."); }
+      else if (r.kind === "opaque") {
+        g.editor = "requested"; announce("Pedimos ao Holyrics para abrir o editor. Olhe a janela do Holyrics.");
+        setTimeout(() => { if (S.dialog === g && g.editor === "requested") { g.editor = "askConfirm"; render(); announce("O editor abriu? Responda no diálogo."); } }, S.askAfterMs);
+      } else { g.editor = "error"; g.errorCode = r.code; announce((EDITOR_ERRORS[r.code] || EDITOR_ERRORS.EDITOR_FAILED)[0]); }
+      render();
+    },
+    editorConfirm(arg) { const g = S.dialog; g.editor = arg === "yes" ? "opened" : "notOpened"; g.confirmedBy = arg === "yes" ? "operator" : null; render(); },
+    pickNew(_, el) { S.dialog.pick = el.value; render(); },
+    confirmCreated() {
+      const g = S.dialog, it = S.data.items.find((i) => i.position === Number(g.pos));
+      const song = g.reread === "ambiguous" ? g.candidates.find((c) => c.id === g.pick) : g.found;
+      if (!song) return;
+      const snap = snapshot();
+      it.state = "ready"; it.holyrics = { id: song.id, title: song.title, artist: song.artist }; it.matchedBy = "externalId";
+      it.lyricsPlaceholder = g.reread === "placeholder";
+      S.sessionLinks.unshift({ title: it.song.title, artist: it.song.artist, holyricsId: song.id, since: nowIso(), source: "individual" });
+      S.dialog = null;
+      S.flash = it.lyricsPlaceholder
+        ? { tone: "warn", icon: "alert", title: `“${it.song.title}” vinculada, mas ainda sem letra.`, body: `Troque ${PLACEHOLDER} pela letra no Holyrics antes do culto.`, undo: snap }
+        : { title: `“${it.song.title}” vinculada.`, body: "Nas próximas semanas ela entra sozinha.", undo: snap };
+      render(); announce(S.flash.title);
+    },
+    toggleRealHolyrics() {
+      if (location.protocol === "file:") { S.realMsg = "Abra pelo servidor: node scripts/serve-prototype.mjs e acesse http://localhost:5177/?holyrics=real"; render(); return; }
+      S.holyricsReal = !S.holyricsReal; S.realMsg = null; render();
+    },
     openSearch() { S.dialog.search = ""; render(); const i = document.getElementById("lib-search"); i && i.focus(); },
     linkManual(arg) {
       const it = S.data.items.find((i) => i.position === Number(S.dialog.pos));
@@ -933,12 +1196,40 @@
       S.dialog = null; S.flash = { title: `“${it.song.title}” vinculada a “${s.title}”.`, undo: snap }; render();
     },
     async reread() {
-      const g = S.dialog; g.reread = "reading"; render(); await sleep(900);
+      // Simula song.awaitCreated (IDs novos com título+artista exatos) + leitura da letra (GetLyrics) para achar o placeholder.
+      const g = S.dialog; g.reread = "reading"; g.pick = null; render(); await sleep(900);
+      if (S.dialog !== g) return;
       const it = S.data.items.find((i) => i.position === Number(g.pos));
-      if (g.tries >= 1 && it.simFoundOnReread) {
-        it.state = "needsLink"; it.suggestion = { ...it.simFoundOnReread, reason: "exactTitleArtist" };
-        S.dialog = null; S.flash = { tone: "info", icon: "link", title: `Encontramos “${it.song.title}”. Confirme o vínculo.` };
-      } else { g.reread = "notFound"; g.tries++; }
+      const sim = it.simCreated || {};
+      let outcome = g.simReread;
+      if (!outcome) outcome = g.tries === 0 && !g.editor ? "notFound" : "created";
+      g.simReread = outcome === "placeholder" ? "created" : null; // depois de corrigir a letra, a próxima leitura encontra limpa
+      g.tries++;
+      g.reread = outcome;
+      if (outcome === "created" || outcome === "placeholder") g.found = sim.song;
+      if (outcome === "ambiguous") g.candidates = sim.ambiguous;
+      render();
+      announce({ created: "Encontramos a música nova.", placeholder: "A música foi salva, mas a letra ainda é o texto provisório.", notFound: "Ainda não encontramos a música nova.", ambiguous: "Encontramos mais de uma música nova com este nome." }[outcome]);
+    },
+    // Ajuda: abrir um tópico guarda de onde veio (tela + diálogo) para o botão Voltar.
+    help(arg) {
+      if (S.screen !== "ajuda") S.helpReturn = { screen: S.screen, dialog: S.dialog };
+      S.dialog = null; S.screen = "ajuda";
+      S.help.topic = HELP_BY_ID[arg] ? arg : "comecar"; S.help.query = ""; S.help.copyMsg = null; S.help.focusTitle = true;
+      render();
+    },
+    helpTopic(arg) { if (!HELP_BY_ID[arg]) return; S.help.topic = arg; S.help.copyMsg = null; S.help.focusTitle = true; render(); },
+    helpJump(arg) { const h = document.getElementById(arg); if (h) { h.scrollIntoView({ block: "start" }); h.focus({ preventScroll: true }); } },
+    helpBack() {
+      const r = S.helpReturn; S.helpReturn = null;
+      if (r) { S.screen = r.screen; S.dialog = r.dialog; } else S.screen = S.data.configured ? "culto" : "onboarding";
+      render();
+    },
+    helpClear() { S.help.query = ""; render(); const i = document.getElementById("help-search"); i && i.focus(); },
+    helpFb(arg) { save("help-fb-" + S.help.topic, arg); render(); announce("Obrigado pela resposta."); },
+    async helpCopy() {
+      try { await navigator.clipboard.writeText(supportInfo()); S.help.copyMsg = "Copiado. Cole na mensagem para o suporte."; }
+      catch { S.help.copyMsg = "Não deu para copiar sozinho: abra “O que é copiado” e copie o texto."; S.helpDiagOpen = true; }
       render();
     },
     toggleSel(arg, el) { S.review.sel[arg] = el.checked; render(); },
@@ -1067,10 +1358,12 @@
     const el = ev.target.closest("[data-input]");
     if (!el) return;
     const k = el.dataset.input;
+    if (k === "helpSearch") { S.help.query = el.value; render(); const i = document.getElementById("help-search"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); return; }
     if (k === "libSearch") { S.dialog.search = el.value; render(); const i = document.getElementById("lib-search"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); return; }
     S.onb[k] = el.value; // sem re-render ao digitar
   });
   document.addEventListener("keydown", (ev) => {
+    if (ev.key === "F1") { ev.preventDefault(); if (!(S.dialog && S.dialog.busy) && S.screen !== "progress") A.help(contextTopic()); return; }
     if (ev.key === "Escape") {
       if (S.dialog && !S.dialog.busy) { S.dialog = null; render(); }
       else if (S.protoOpen) { S.protoOpen = false; render(); }
@@ -1098,10 +1391,30 @@
   const startScenario = D.scenarios[qs.get("cenario")] ? qs.get("cenario") : "feliz";
   loadScenario(startScenario);
   if (qs.get("tela") && S.data.configured) S.screen = qs.get("tela");
+  // ?tela=ajuda&topico=<id>&busca=<texto> (a Ajuda abre mesmo antes da primeira configuração)
+  if (qs.get("tela") === "ajuda") { S.screen = "ajuda"; if (HELP_BY_ID[qs.get("topico")]) S.help.topic = qs.get("topico"); if (qs.get("busca")) S.help.query = qs.get("busca"); }
   if (qs.get("onb")) S.onb.step = qs.get("onb");
   const dlg = qs.get("dialogo");
   if (dlg === "confirm") S.dialog = { type: "confirm", ackPartial: false, ackDest: false };
-  if (dlg === "choose" || dlg === "missing") { const it = S.data.items.find((i) => i.state === (dlg === "choose" ? "chooseVersion" : "missing")); if (it) S.dialog = dlg === "choose" ? { type: "choose", pos: it.position, pick: null } : { type: "missing", pos: it.position, reread: null, tries: 0, search: null, editorOpened: false }; }
+  if (dlg === "choose" || dlg === "missing") { const it = S.data.items.find((i) => i.state === (dlg === "choose" ? "chooseVersion" : "missing")); if (it) S.dialog = dlg === "choose" ? { type: "choose", pos: it.position, pick: null } : newMissingDialog(it.position); }
+  // ?holyrics=real (só via http) · ?holyricsUrl=http://127.0.0.1:8091 · ?pergunta=ms (tempo até "O editor abriu?")
+  if (qs.get("holyrics") === "real" && location.protocol !== "file:") S.holyricsReal = true;
+  if (qs.get("holyricsUrl")) S.holyricsUrl = qs.get("holyricsUrl");
+  if (qs.get("pergunta")) S.askAfterMs = Math.max(500, Number(qs.get("pergunta")) || 4000);
+  if (S.dialog && S.dialog.type === "missing") {
+    const g = S.dialog, it = S.data.items.find((i) => i.position === g.pos), sim = it.simCreated || {};
+    // estados do editor: ?editor=aguardando|pergunta|aberto|naoabriu|jaaberto|fechado
+    const ed = { aguardando: ["requested"], pergunta: ["askConfirm"], aberto: ["opened"], naoabriu: ["notOpened"], jaaberto: ["error", "EDITOR_ALREADY_OPEN"], fechado: ["error", "HOLYRICS_UNREACHABLE"] }[qs.get("editor")];
+    if (ed) { g.editor = ed[0]; g.errorCode = ed[1] || null; }
+    // simulação do clique: ?resposta=opaco|jaaberto|fechado
+    g.simEditor = { opaco: "opaque", jaaberto: "EDITOR_ALREADY_OPEN", fechado: "HOLYRICS_UNREACHABLE" }[qs.get("resposta")] || null;
+    // resultado da releitura: ?releitura=encontrada|placeholder|naoencontrada|ambigua
+    const rr = { encontrada: "created", placeholder: "placeholder", naoencontrada: "notFound", ambigua: "ambiguous" }[qs.get("releitura")];
+    if (rr) { g.editor = g.editor || "opened"; g.reread = rr; g.tries = 1; g.found = sim.song; g.candidates = sim.ambiguous || []; }
+    // próxima leitura ao clicar: ?proxima=encontrada|placeholder|naoencontrada|ambigua
+    const nx = { encontrada: "created", placeholder: "placeholder", naoencontrada: "notFound", ambigua: "ambiguous" }[qs.get("proxima")];
+    if (nx) g.simReread = nx;
+  }
   if (qs.get("tema")) S.theme = qs.get("tema");
   // ?antes=0|7|15: tamanho da playlist atual no destino (teste do diálogo de substituição)
   if (qs.has("antes") && S.data.destination) {

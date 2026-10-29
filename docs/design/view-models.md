@@ -141,7 +141,8 @@ Regra de UI: `kind = "temporary"` **nunca** exibe "Mesmo dia do setlist". O núc
   "candidates": [],                          // chooseVersion: HolyricsSong[] com título/artista (não só IDs) + "reason": "exactDuplicate" | "similar"
   "approximate": false,                      // true: candidato só parecido (ex.: ’ × ' — pontuação é preservada) → sempre individual, nunca lote
   "repeatOf": null | 0,                      // repeated: posição da 1ª ocorrência
-  "staleLink": null | { "oldId": "1611…", "reason": "notInLibrary" }   // vínculo existia mas ID sumiu
+  "staleLink": null | { "oldId": "1611…", "reason": "notInLibrary" },  // vínculo existia mas ID sumiu
+  "lyricsPlaceholder": false                 // ready: a letra no Holyrics ainda é exatamente "[Letra não fornecida]" → linha "Pronta — sem letra", chip "N sem letra" no resumo e aviso no T3
 }
 ```
 
@@ -178,6 +179,44 @@ Regra do lote: `batch` contém **somente** exatos únicos (`state = needsLink`, 
 ```
 
 `createdAt` do candidato: o ID Holyrics é epoch em ms, então a data pode ser derivada sem API extra.
+
+### MissingDialogVM — "Não está no Holyrics" (T2b)
+
+Estado local da UI montado a partir de `song.openEditor` e `song.awaitCreated` (docs/contracts/ui-core-ipc.md). O núcleo não guarda esse estado.
+
+```jsonc
+{
+  "position": 4,
+  "videira": { "title": "Deus de Promessas", "artist": "Davi Sacer" },
+  "previousCatalogTaken": true,              // snapshot GetSongs tirado ANTES do 1º song.openEditor; reusado em todas as releituras
+  "editor": null | "opening" | "requested" | "askConfirm" | "opened" | "notOpened" | "error",
+  "editorConfirmedBy": null | "status" | "operator",   // "status" = o núcleo leu 200; "operator" = respondeu "Sim, abriu"
+  "errorCode": null | "EDITOR_ALREADY_OPEN" | "EDITOR_UNSUPPORTED" | "RATE_LIMITED" | "HOLYRICS_UNREACHABLE" | "EDITOR_FAILED",
+  "cooldownUntil": 0,                        // epoch ms; botão desabilitado por 2 s depois de cada chamada
+  "reread": null | "reading" | "created" | "placeholder" | "notFound" | "ambiguous",
+  "found": null | { "id": "1793000000001", "title": "Deus de Promessas", "artist": "Davi Sacer", "lyricsPlaceholder": false },
+  "candidates": [ { "id": "…", "title": "…", "artist": "…", "savedAt": "09:31", "lyricsPlaceholder": false } ],
+  "pick": null | "1793000000002"
+}
+```
+
+Mapeamento:
+
+| Fonte | Resultado | `editor` / `reread` |
+|---|---|---|
+| `song.openEditor` | `{ ok: true }` | `editor: "opened"`, `editorConfirmedBy: "status"` |
+| `song.openEditor` | `CoreError.code` | `editor: "error"`, `errorCode` |
+| (só no protótipo, `no-cors`) | resposta opaca | `editor: "requested"` → após ~4 s `askConfirm` → `opened` / `notOpened` pela resposta do operador |
+| `song.awaitCreated` | `{ state: "created", song }` e letra ≠ placeholder | `reread: "created"` |
+| `song.awaitCreated` | `{ state: "created", song }` e letra = `[Letra não fornecida]` | `reread: "placeholder"` |
+| `song.awaitCreated` | `{ state: "not-found" }` | `reread: "notFound"` |
+| `song.awaitCreated` | `{ state: "ambiguous", songs }` | `reread: "ambiguous"`, `candidates = songs` |
+
+- `requested`/`askConfirm` existem só no protótipo. No app real, `song.openEditor` passa pelo processo principal, que lê o status. A UI vai direto de `opening` para `opened` ou `error`.
+- `savedAt` vem do ID do Holyrics (epoch em ms), formatado como hora local.
+- Confirmar: `songLinks.confirmBatch` com um único par (`found.id`, ou `pick` em `ambiguous`). O item vira `state: "ready"` e carrega `lyricsPlaceholder` do candidato (ver ItemVM).
+- Não há comando para editar uma música existente. Reabrir o editor cria uma duplicata (veja G13).
+
 
 ## 5. Confirmar substituição (T3)
 
@@ -294,7 +333,9 @@ Notificação: `{ "kind": "reminderReady" | "reminderPending" | "setlistChanged"
 | G9 | Outcome `unchanged` | Existe no núcleo, mas o ADR 0004 lista só added/duplicate/skipped/failed | Alinhar com o Videira |
 | G10 | Desfazer vínculo | Não existe endpoint | `unlink(songId)` mantendo histórico (depende do endpoint de vínculo em lote) |
 | G11 | `publishedBy` / `updatedAt` do setlist | Endpoint não expõe | Opcional para UX; `updatedAt` necessário para G8 |
-| G12 | Abrir editor do Holyrics para ausente | Rota `/api/popup-createsong` não documentada | `openHolyricsEditor({ title, artist })` com tratamento 409/429 |
+| G12 | Abrir editor do Holyrics para ausente | Resolvido: `song.openEditor` + `song.awaitCreated` (contrato IPC) | UI segue MissingDialogVM (§4) |
+| G13 | Detectar letra provisória (`lyricsPlaceholder`) | `awaitCreated` devolve só `HolyricsSong` (sem letra) | Depois de `created`/`ambiguous`, o núcleo chama `GetLyrics(id)` (já está nas permissões mínimas) e marca `lyricsPlaceholder: true` quando o texto é exatamente `[Letra não fornecida]`; repetir em `prepare` para itens `ready` vinculados nesta sessão. Sem isso, a UI só mostra o aviso fixo do passo 2 |
+| G14 | Editar música existente (corrigir letra) | Não há rota; `popup-createsong` só cria | Fora do escopo: a UI orienta a editar no Holyrics e `[Ler de novo]`; nunca oferece "Abrir de novo para editar" |
 
 ## 13. Comandos (UI → núcleo)
 
@@ -309,10 +350,32 @@ Notificação: `{ "kind": "reminderReady" | "reminderPending" | "setlistChanged"
 | `rereadLibrary` | — | `PrepareVM` |
 | `confirmLinks` | `{ links: [{ songId, holyricsId }] }` | `{ linked, failed, undoToken }` |
 | `undoLinks` | `{ undoToken }` | `{ ok }` |
-| `openHolyricsEditor` | `{ title, artist }` | `{ ok } \| AppError` |
+| `song.openEditor` (era `openHolyricsEditor`) | `{ title, artist }` | `{ ok: true } \| CoreError` |
+| `song.awaitCreated` | `{ previousCatalog, title, artist }` | `{ state: "created" \| "not-found" \| "ambiguous", song?, songs? }` (+ `lyricsPlaceholder`, G13) |
 | `getApplyPreview` | — | `ApplyConfirmVM` |
 | `apply` | `{ planFingerprint, allowPartial, destinationAck }` | eventos + `ResultVM` |
 | `restorePrevious` | — | `ResultVM` |
 | `getReconciliation` / `confirmRemaps` | `{ remaps: [{ songId, oldId, newId }] }` | `ReconciliationVM` |
 | `retryReports` | — | `{ sent, remaining }` |
 | `getHistory` / `getSettings` / `saveSettings` | … | VMs 9–10 |
+
+## 14. Ajuda (T10)
+
+Conteúdo estático, empacotado com o app e sem chamada ao núcleo. A UI lê o mesmo formato que o protótipo, `help-data.js`, gerado de `src/help/*.md`:
+
+```jsonc
+{
+  "id": "configurar-holyrics",                 // = nome do arquivo
+  "titulo": "Configurar o Holyrics (API e token)",
+  "publico": "operador" | "tecnico",
+  "categoria": "comecar" | "domingo" | "problema" | "tecnico",
+  "ordem": 1,
+  "palavrasChave": ["holyrics", "api server", "token"],
+  "relacionados": ["seguranca-dos-tokens", "problemas-comuns"],
+  "body": "…markdown, subconjunto seguro, sem HTML…"
+}
+```
+
+- Estado local: `topic`, `query`, `returnTo: { screen, dialog }` e `feedback[id]: "yes" | "no"`. A avaliação fica só em armazenamento local.
+- `Copiar informações para suporte` usa um diagnóstico **sem segredos**. No app final, é o resumo de `diagnostics.preview` (contrato IPC): versão do app, versão, porta e Plan do Holyrics, estado das conexões e último `CoreError.code`. Nunca header, token ou corpo HTTP.
+- Mapa código → tópico: [help-map.md](help-map.md).

@@ -6,6 +6,8 @@
 
 ## 0. Vocabulário fixo
 
+> Ajuda: "Ajuda" (nunca "FAQ" ou "Suporte"), "tópico", "Ver ajuda sobre isto". Em todo texto da ajuda: "token" (não "chave"), "playlist selecionada", "Publicar no Holyrics".
+
 | Conceito técnico | O que a interface diz | Nunca dizer |
 |---|---|---|
 | playlist selecionada / `GetCurrentSchedule` | **culto selecionado no Holyrics** / **destino** | "schedule", "playlist via API" |
@@ -125,6 +127,7 @@ Hint da barra de ação: agenda → "A playlist de “{Culto de Domingo 01/11}�
 | Escolher versão | ◆ **Escolher versão** (warning) | "Há {2} músicas com este nome no Holyrics." | `[[Escolher]]` |
 | Parecida (aproximada) | ◆ **Conferir parecida** (warning) | "Achamos “{Aquieta Minh'alma}”: nome parecido, mas não igual." | `[[Conferir]]` |
 | Não está no Holyrics | ✕ **Não está no Holyrics** (danger) | "Precisa ser cadastrada no Holyrics antes." | `[[Como resolver]]` |
+| Pronta, letra provisória | ⚠ **Pronta — sem letra** (warning) | "Letra ainda é [Letra não fornecida] no Holyrics: troque antes do culto." | — |
 | Repetida | ↻ **Repetida — entra 1 vez** (neutral) | "Já está na posição {1}. O Holyrics não aceita a mesma música duas vezes na playlist." | — |
 | Vínculo antigo (reconciliação) | ● **Confirmar vínculo** (info) | "A música vinculada não existe mais nesta biblioteca. Achamos uma igual." | `[[Revisar]]` |
 
@@ -169,12 +172,56 @@ Variante **aproximada**: título **“{Aquieta Minh’alma}” é esta música?*
 - "Nenhuma destas" → linha vira "Não está no Holyrics".
 
 ### 3.3 Não está no Holyrics (T2b, diálogo)
+
+Fluxo: **ausente → abrir editor → operador salva no Holyrics → ler a biblioteca de novo → uma candidata → Confirmar vínculo.** O app nunca salva a música; quem salva é o operador no Holyrics.
+
 - Título: **“{título}” não está no Holyrics**
-- Apoio: "O app não cria músicas no Holyrics. Cadastre por um destes caminhos e depois leia a biblioteca de novo:"
-  1. **Abrir o editor do Holyrics já com o nome** — `[[Abrir no Holyrics]]` ("Você cola a letra e clica em Salvar lá.")
-  2. **Importar um arquivo** (TXT, OpenLP ou OpenSong) se você tem a letra.
-  3. **Já está no Holyrics com outro nome?** `[[Procurar na biblioteca]]` (busca manual; resultado vira escolha individual)
-- `[[Fechar]]` `[Ler a biblioteca de novo]` → `Lendo…` → "Encontrada! Confirme o vínculo." / "Ainda não encontramos “{título}”."
+- Apoio: "O app não cria músicas sozinho: ele abre o editor do Holyrics já com o nome, e você salva lá."
+- Passos numerados (sempre visíveis):
+  1. **Abrir o editor do Holyrics já com o nome**: `[Abrir no Holyrics]`. Enquanto abre, o botão mostra `Abrindo…`. Nos 2 s seguintes mostra `Aguarde…` e fica desabilitado, porque o Holyrics aceita uma chamada a cada 2 s. Depois da primeira vez, o rótulo é `[Abrir de novo no Holyrics]`.
+  2. **No Holyrics: cole a letra e clique em Salvar**, com o aviso fixo abaixo (warning):
+     > **No Holyrics, troque o texto [Letra não fornecida] pela letra antes de salvar**
+     > O app não tem a letra desta música, então o editor abre com essa frase no lugar dela. Se salvar assim, ela aparece no telão.
+  3. **Volte aqui e leia a biblioteca de novo**: "vamos procurar “{título}” de {artista} entre as músicas novas."
+- Rodapé: `[Fechar]` e `[[Ler a biblioteca de novo]]`. Depois da primeira leitura, o botão principal vira `[[Ler de novo]]`.
+
+#### Estados do editor (abaixo do botão do passo 1)
+
+| Estado (`editor`) | Quando | Tom | Texto |
+|---|---|---|---|
+| `requested` | Pedido enviado sem status legível (resposta opaca) | info, `role=status` | **Pedimos ao Holyrics para abrir o editor — olhe a janela do Holyrics** · "Deve aparecer “Nova música” com “{título}” e {artista} preenchidos." |
+| `askConfirm` | ~4 s depois de `requested` | info | Igual a `requested` + **O editor abriu?** `[Sim, abriu]` `[Não abriu]` (foco em "Sim, abriu") |
+| `opened` | Status 200 lido, ou o operador respondeu "Sim, abriu" | ok | **O editor abriu no Holyrics** · "O Holyrics confirmou." (só quando o status foi lido) "Cole a letra, troque o texto [Letra não fornecida] e clique em Salvar lá. Depois volte aqui." |
+| `notOpened` | O operador respondeu "Não abriu" | warning, `role=alert` | **O editor não abriu** + lista: **Holyrics fechado?** Abra o Holyrics neste computador. · **API desligada?** Arquivo → Configurações → API Server → marque Ativar (local). · **Já tem um editor de música aberto?** Salve ou feche essa janela no Holyrics. `[Tentar de novo]` |
+| `error` | Código tipado de `song.openEditor` | warning (info para `RATE_LIMITED`) | ver tabela abaixo + `[Tentar de novo]` |
+
+| Código | Título | Corpo |
+|---|---|---|
+| `EDITOR_ALREADY_OPEN` (409) | Já tem um editor de música aberto no Holyrics | Salve ou feche essa janela no Holyrics e clique em Tentar de novo. |
+| `RATE_LIMITED` (429) | O Holyrics pediu para esperar um pouco | Espere 2 segundos e tente de novo. |
+| `EDITOR_UNSUPPORTED` (404) | Esta versão do Holyrics não abre o editor por aqui | Cadastre pelo próprio Holyrics (nova música) ou importe um arquivo; depois leia a biblioteca de novo. |
+| `HOLYRICS_UNREACHABLE` | O Holyrics não respondeu | Confira se o Holyrics está aberto e se Arquivo → Configurações → API Server → Ativar (local) está marcado. |
+| `EDITOR_FAILED` (400/403/415/outro) | O Holyrics não abriu o editor | Tente de novo. Se continuar, cadastre a música pelo próprio Holyrics. |
+
+#### Resultado da releitura (`song.awaitCreated` + checagem da letra)
+
+| Resultado | Tom | Texto | Botões |
+|---|---|---|---|
+| Lendo | — | "Lendo a biblioteca do Holyrics…" | `[[Lendo…]]` desabilitado |
+| `created` | ok | **Encontramos a música nova no Holyrics** · "Confira e confirme o vínculo. Ele fica salvo no Videira Music." + par Videira → Holyrics · nova | `[[Confirmar vínculo]]` (foco) |
+| `created` + letra ainda é o placeholder | warning, `role=alert` | **“{título}” foi salva, mas a letra ainda é [Letra não fornecida]** · "Se publicar assim, essa frase aparece no telão. No Holyrics, procure a música na biblioteca, abra para editar, troque o texto pela letra e salve. Depois clique em Ler de novo." + `<details>` **Por que o app não abre essa música para editar?** "Por aqui o Holyrics só abre o editor de **música nova**. Abrir de novo criaria uma segunda cópia, e aí ficariam duas “{título}” na biblioteca." | `[Vincular mesmo assim]` `[[Ler de novo]]` (foco); motivo: "A letra continua faltando se vincular agora." |
+| `not-found` | warning | **Ainda não encontramos uma música nova chamada “{título}”** · "Confira se clicou em Salvar no Holyrics e se o título e o artista estão exatamente assim (acentos e maiúsculas não importam; pontuação importa):" + bloco mono `Título: …` / `Artista: …` | `[[Ler de novo]]` |
+| `ambiguous` | warning | **Encontramos {2} músicas novas chamadas “{título}”** · "Talvez tenha sido salva duas vezes. Escolha qual vincular; a outra pode ser apagada depois no Holyrics." + radios "Salva hoje às {09:31} · {id}" | `[[Usar esta versão]]` (desabilitado até escolher; motivo "Escolha uma das músicas.") |
+
+Depois de confirmar:
+- Toast ok: "“{título}” vinculada." / "Nas próximas semanas ela entra sozinha." `[Desfazer]`.
+- Se vinculou com o placeholder, o toast é warning: "“{título}” vinculada, mas ainda sem letra." / "Troque [Letra não fornecida] pela letra no Holyrics antes do culto." `[Desfazer]`. A linha fica **Pronta — sem letra** (§2), o resumo ganha o chip "{1} sem letra", e o diálogo de substituição (§4) mostra: **“{título}” ainda está sem letra no Holyrics** · "O texto [Letra não fornecida] vai aparecer no telão. Troque pela letra no Holyrics antes do culto."
+
+**Não existe "Abrir de novo para editar".** `popup-createsong` só abre o editor de música nova, e nenhuma rota abre uma música existente para edição. Reabrir criaria uma duplicata, que cai em `ambiguous` na próxima leitura. A correção da letra é feita no Holyrics, e depois o operador usa `[Ler de novo]`.
+
+`<details>` **Outros caminhos**:
+- **Importar um arquivo** (TXT, OpenLP ou OpenSong) se você tem a letra: no Holyrics, Arquivo → Importar.
+- **Já está no Holyrics com outro nome?** `[Procurar na biblioteca]` abre uma busca manual; o resultado vira escolha individual.
 
 ## 4. Confirmar substituição (T3, diálogo)
 
@@ -261,6 +308,28 @@ Seções (cada uma com seu `[Salvar]` só quando houver mudança):
 - **Bandeja**: "Iniciar com o Windows" · "Ao fechar a janela, continuar na bandeja"
 - **Dados deste computador**: `[[Abrir pasta de dados]]` · `[[Refazer cache]]` ("Baixa de novo setlist e biblioteca. Vínculos ficam no Videira e não são afetados.")
 - **Sobre**: versão, link de ajuda.
+
+## 11. Ajuda (T10)
+
+- Navegação: **Ajuda**, com tooltip "Ajuda (F1)" e `aria-keyshortcuts="F1"`.
+- Eyebrow: "Funciona sem internet · F1" · Título: **Ajuda** · Apoio: "Respostas curtas para o domingo e guias para quem configura."
+- Busca: rótulo **Procurar na ajuda**, placeholder "Ex.: token, destino, letra", botão `[Limpar]` quando há texto.
+  - Contagem (`aria-live`): "12 tópicos" · "{3} tópicos encontrados" · "Nenhum tópico encontrado".
+  - Sem resultado: **Nada encontrado para “{texto}”.** "Tente outra palavra, como “token”, “destino” ou “letra”." e o link "Ver problemas comuns".
+- Categorias: **Começar** · **Todo domingo** · **Resolver problema** · **Configuração técnica**. Com busca, a lista vira **Resultados**.
+- Chip de público: **Operador** (info) · **Técnico** (neutral). O leitor de tela lê "Público: Operador".
+- Índice do tópico: **Nesta página** (só com 2 seções ou mais). No rodapé, **Veja também**.
+- Avaliação: **Esta resposta ajudou?** `[Sim]` `[Não]` (`aria-pressed`).
+  - Antes de responder: "A resposta fica só neste computador; nada é enviado."
+  - Depois de Sim: "Obrigado! A resposta fica só neste computador; nada é enviado."
+  - Depois de Não: "Obrigado. Veja “Problemas comuns” ou copie as informações para suporte. A resposta fica só neste computador; nada é enviado."
+- Suporte: `[Copiar informações para suporte]`.
+  - Se copiou: "Copiado. Cole na mensagem para o suporte."
+  - Se não deu: "Não deu para copiar sozinho: abra “O que é copiado” e copie o texto."
+  - `<details>` **O que é copiado**, com o texto exato e a nota "Versões e estado das conexões. Os tokens nunca entram."
+- Voltar: `[Voltar para onde estava]` quando veio de um diálogo, `[Voltar]` quando veio de outra tela, `[Voltar à configuração]` quando veio da primeira configuração.
+- Link contextual: **Ver ajuda sobre isto**, com ícone ?, sempre depois da ação principal do erro. Os rótulos específicos estão em [help-map.md](help-map.md#3-links-com-rótulo-próprio).
+- Marcador nos tópicos: chip **não testado** (warning) onde o tutorial diz "(não testado)".
 
 ## Bandeja e notificações
 

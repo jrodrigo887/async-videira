@@ -40,11 +40,12 @@ Todo domingo, minutos antes do culto, alguém da mídia precisa que a playlist d
 | **Feedback claro e honesto** | "Publicado e conferido" só após releitura igual ao esperado. Progresso por etapa, com a etapa atual nomeada. Erros na região, persistentes, com o próximo passo. |
 | **Defaults seguros** | Lote só para correspondência exata única, e mesmo assim revisável (pode desmarcar). Destino suspeito exige reconhecimento explícito. Relatório nunca é perdido (fila). |
 | **Desfazer sempre que possível** | `Restaurar playlist anterior` após publicar (enquanto o backup existir). Vínculo confirmado pode ser desfeito no histórico do item. Reconciliação nunca apaga o vínculo antigo. |
+| **Ajuda onde a dúvida aparece** | Todo erro e todo diálogo de decisão tem `Ver ajuda sobre isto`, que abre o tópico certo, e `Voltar para onde estava` devolve a tela e o diálogo como estavam. `F1` abre a ajuda do que está na tela. A ajuda funciona sem internet. |
 | **Calma por padrão** | Sem animação decorativa; um único momento de movimento (progresso). Bandeja silenciosa: só notifica quando há algo a fazer. |
 
 ## 5. Arquitetura de informação
 
-Navegação lateral com 4 destinos (poucos de propósito; o operador vive na primeira):
+Navegação lateral com 4 destinos de trabalho e mais **Ajuda** (poucos de propósito; o operador vive na primeira):
 
 ```
 ┌──────────────┬──────────────────────────────────────────────┐
@@ -54,7 +55,7 @@ Navegação lateral com 4 destinos (poucos de propósito; o operador vive na pri
 │   Vínculos   │   conteúdo da tela                           │
 │   Histórico  │                                              │
 │   Ajustes    │                                              │
-│              │                                              │
+│   Ajuda (F1) │                                              │                                              │
 │ v0.1 · Igreja│                                [ação única]  │
 └──────────────┴──────────────────────────────────────────────┘
 ```
@@ -75,6 +76,7 @@ Navegação lateral com 4 destinos (poucos de propósito; o operador vive na pri
 | T7 | **Histórico** (execuções + relatórios pendentes) | Menu; badge de pendentes | `Enviar relatórios pendentes` |
 | T8 | **Ajustes** (conexões, agendamento, aparência, bandeja, dados) | Menu | por seção (`Salvar`) |
 | T9 | **Bandeja e notificações** | Sistema | item de menu `Preparar culto` |
+| T10 | **Ajuda** (busca, tópicos por categoria, leitor com índice) | Menu; `F1`; `Ver ajuda sobre isto` em erros e diálogos; primeira configuração | — (leitura; `Voltar para onde estava`) |
 
 ### Fluxo principal (caminho feliz, alvo: ≤ 3 cliques e < 1 min)
 
@@ -130,6 +132,8 @@ Abrir app ─► T1 carrega sozinho (setlist + biblioteca + destino)
 | **Lista de etapas de progresso** | Aplicação não atômica com várias fases | `.step-list` |
 | **Alerta de região** (ícone + título + texto + ação) | O DS tem só `Alert` em texto; aqui o erro precisa de ação | `.callout` (`--warn`, `--danger`, `--info`, `--ok`) |
 | **Barra de ação fixa no rodapé** | Lista longa + ação primária sempre visível na janela | `.action-bar` |
+| **Leitor de ajuda** (lista por categoria + tópico em Markdown seguro + índice) | Ajuda offline, escrita para o operador | `.help-layout`, `.help-topic`, `.md` |
+| **Link de ajuda contextual** (ícone ? + "Ver ajuda sobre isto") | Liga o erro ao tópico sem tirar o foco do problema | `.help-link` |
 | **Menu da bandeja e notificação do SO** | Nativos do sistema; o app só define texto e itens | ver [microcopy](microcopy.md#bandeja-e-notificacoes) |
 
 Não usados: densidade "Estante" e classes `.music-*` (o app não mostra cifra), `chord` (não há acorde; IDs usam `content-muted` em mono).
@@ -146,6 +150,7 @@ Não usados: densidade "Estante" e classes `.music-*` (o app não mostra cifra),
 | Holyrics fechado no meio | Etapa atual nomeada; resultado "falhou" com restauração tentada e conferida; lista original para copiar. |
 | Pânico com o culto começando | Tudo ou nada é o padrão, mas a publicação parcial consciente existe; erros dizem o próximo passo em uma frase. |
 | Token exposto / API aberta na rede | Aviso no pareamento e em Ajustes; token mascarado; nunca exibido de novo. |
+| Operador sozinho no domingo, sem o técnico | Ajuda dentro do app, offline, escrita para o operador. Tópicos técnicos marcados com o chip `Técnico`. `Copiar informações para suporte` copia versões e estados, nunca tokens. |
 | Troca de PC esquecida | Detecção automática e banner; nunca apaga vínculo antigo. |
 
 ## 8. Métricas de sucesso (para validar com operador real)
@@ -154,3 +159,35 @@ Não usados: densidade "Estante" e classes `.music-*` (o app não mostra cifra),
 - 0 publicações no culto errado em teste de usabilidade com destino "Temporário" selecionado.
 - Operador explica, sem ajuda, o que é "Repetida — entra 1 vez" e "Não está no Holyrics".
 - Primeira configuração concluída pelo técnico voluntário em < 10 min sem documentação externa.
+
+## 9. Ajuda dentro do app (T10)
+
+**Para quem:** o operador de mídia sozinho no domingo e, nos tópicos marcados `Técnico`, quem configura.
+
+**Conteúdo:**
+- Os 12 tópicos ficam em `src/help/*.md`, cada um com front matter `id`, `titulo`, `publico: operador|tecnico`, `categoria`, `ordem`, `palavras-chave` e `relacionados`.
+- O texto foi reescrito a partir de `docs/tutorial/configurar-holyrics-e-async-videira.md` em frases curtas e sem jargão de API. Os comandos de linha de comando ficaram de fora, porque o operador usa os botões do app.
+- O que o tutorial marca como não validado aparece com o chip **não testado**.
+- Nenhum comportamento novo foi inventado. Onde o tutorial fala em CLI, o tópico usa o botão equivalente do protótipo, por exemplo `preparar` → `Preparar de novo` e `aplicar` → `Publicar no Holyrics`.
+
+**Categorias:** Começar · Todo domingo · Resolver problema · Configuração técnica.
+
+**Tela:**
+- Busca com filtro instantâneo, sem acento, por título, palavras-chave e texto. Quando o termo aparece no título, o tópico vem primeiro.
+- Lista de tópicos por categoria.
+- Leitor do tópico com chip de público, índice "Nesta página" e "Veja também".
+- "Esta resposta ajudou? Sim / Não", guardado só neste computador e nunca enviado.
+- `Copiar informações para suporte`, que copia versão do app, versão, porta e Plan do Holyrics, estado das conexões e último código de erro. Nunca copia tokens.
+
+**Entradas:**
+- item **Ajuda** na navegação;
+- `F1` em qualquer tela ou diálogo (exceto durante a escrita), que abre o tópico do contexto;
+- `Ver ajuda sobre isto` em erros e diálogos, conforme o [mapa de ajuda](help-map.md);
+- links na primeira configuração, onde a Ajuda abre sem o menu lateral e com `Voltar à configuração`.
+
+**Offline e segurança:**
+- `build-help.mjs` gera `help-data.js` a partir dos `.md`, então a Ajuda funciona até por `file://`.
+- O Markdown é renderizado por um subconjunto seguro: todo texto é escapado, nenhum HTML do `.md` passa e links só levam a outros tópicos.
+- O gerador recusa HTML, `relacionados` inexistentes e links quebrados.
+- No app final, o processo principal empacota `src/help` no build. O mesmo renderizador seguro ou equivalente roda na interface, sem rede.
+

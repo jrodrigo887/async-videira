@@ -47,7 +47,14 @@
     eEleSuggest: (p) => ({ position: p, songId: "fixture-videira-e-ele", song: { title: "É Ele", artist: "DROPS" }, state: "needsLink", holyrics: null, matchedBy: null, suggestion: { ...E_ELE, reason: "exactTitleArtist" }, candidates: [], repeatOf: null, staleLink: null }),
     aBoaParteRepeat: (p, of) => ({ position: p, songId: "fixture-videira-a-boa-parte", song: { title: "A Boa Parte", artist: "Florianópolis House Of Prayer e Nívea Soares" }, state: "repeated", holyrics: A_BOA_PARTE, matchedBy: "externalId", suggestion: null, candidates: [], repeatOf: of, staleLink: null }),
     santoAmbiguous: (p) => ({ position: p, songId: "fixture-videira-santo", song: { title: "Santo", artist: "Fernandinho" }, state: "chooseVersion", holyrics: null, matchedBy: null, suggestion: null, candidates: [SANTO_A, SANTO_B], repeatOf: null, staleLink: null }),
-    promessasMissing: (p) => ({ position: p, songId: "fixture-videira-deus-de-promessas", song: { title: "Deus de Promessas", artist: "Davi Sacer" }, state: "missing", holyrics: null, matchedBy: null, suggestion: null, candidates: [], repeatOf: null, staleLink: null, simFoundOnReread: { id: "1793000000001", title: "Deus de Promessas", artist: "Davi Sacer" } }),
+    promessasMissing: (p) => ({ position: p, songId: "fixture-videira-deus-de-promessas", song: { title: "Deus de Promessas", artist: "Davi Sacer" }, state: "missing", holyrics: null, matchedBy: null, suggestion: null, candidates: [], repeatOf: null, staleLink: null, // Resultado simulado de song.awaitCreated depois que o operador salva no Holyrics.
+      simCreated: {
+        song: { id: "1793000000001", title: "Deus de Promessas", artist: "Davi Sacer" },
+        ambiguous: [
+          { id: "1793000000001", title: "Deus de Promessas", artist: "Davi Sacer", savedAt: "09:31" },
+          { id: "1793000000002", title: "Deus de Promessas", artist: "Davi Sacer", savedAt: "09:33" },
+        ],
+      } }),
     milGrausStale: (p) => ({ position: p, songId: "fixture-videira-mil-graus", song: { title: "Mil Graus", artist: "Renascer Praise" }, state: "needsLink", holyrics: null, matchedBy: null, suggestion: { id: "1801000000004", title: "Mil Graus", artist: "Renascer Praise", reason: "exactTitleArtist" }, candidates: [], repeatOf: null, staleLink: { oldId: "1792693855267", reason: "notInLibrary" } }),
     // Lote: exatos únicos (a normalização ignora acento e caixa: "Grande é o Senhor" = "Grande É o Senhor").
     exact: (p, songId, title, artist, h) => ({ position: p, songId, song: { title, artist }, state: "needsLink", holyrics: null, matchedBy: null, suggestion: { ...h, reason: "exactTitleArtist" }, candidates: [], repeatOf: null, staleLink: null }),
@@ -93,6 +100,11 @@
       label: "Setlist com música repetida (A, É, A)",
       group: "Fluxo principal",
       data: () => base({ items: [item.aBoaParte(0), item.eEleReady(1), item.aBoaParteRepeat(2, 0)] }),
+    },
+    ausente: {
+      label: "Música ausente → abrir editor do Holyrics",
+      group: "Fluxo principal",
+      data: () => base({ items: [item.milGraus(0), item.promessasMissing(1), item.aBoaParte(2)] }),
     },
     temporaria: {
       label: "Destino = playlist temporária (caso real sem Plan)",

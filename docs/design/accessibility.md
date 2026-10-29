@@ -8,6 +8,7 @@
 |---|---|---|
 | `Tab` / `Shift+Tab` | Tudo | Ordem = ordem visual: navegação lateral → barra de conexões → conteúdo → barra de ação |
 | `Ctrl+1…4` | Tudo | Culto, Vínculos, Histórico, Ajustes |
+| `F1` | Tudo (também em diálogo; ignorado durante a escrita) | Abre a Ajuda no tópico do contexto ([help-map](help-map.md)); `Voltar para onde estava` devolve a tela e o diálogo |
 | `Ctrl+R` / `F5` | Culto | Preparar de novo (reler setlist, biblioteca e destino) |
 | `Ctrl+Enter` | Culto, Revisar | Aciona o botão primário da tela (**nunca** confirma o diálogo de substituição) |
 | `Esc` | Diálogo | Cancela e devolve o foco ao controle que abriu |
@@ -118,3 +119,39 @@ Pontos de atenção:
 | Barra "N selecionados" | `content` / `surface-muted` | ~17:1 | ~13:1 |
 
 Valores aproximados, calculados a partir dos HSL do DS. As capturas dos dois temas foram conferidas visualmente; falta a medição com ferramenta no build final.
+
+## 11. Diálogo "Não está no Holyrics": editor e releitura (2026-10-29)
+
+Mesma checagem automatizada da §9, feita em `?cenario=ausente&dialogo=missing` e em cada estado (`&editor=aguardando|pergunta|aberto|naoabriu|jaaberto|fechado`, `&releitura=encontrada|placeholder|naoencontrada|ambigua`). Em todos os estados, 16 Tabs seguidos não saem do diálogo.
+
+| Estado | Foco inicial | Anúncio |
+|---|---|---|
+| Inicial | `Abrir no Holyrics` | — |
+| Pedido enviado / O editor abriu? | `Sim, abriu` | `role=status`: "Pedimos ao Holyrics…" e, depois, "O editor abriu? Responda no diálogo." |
+| Não abriu / erro | botão principal | `role=alert` com a causa |
+| Encontrada | `Confirmar vínculo` (há Desfazer depois) | `role=status` |
+| Placeholder | `Ler de novo`, não "Vincular mesmo assim" | `role=alert` |
+| Ambígua | 1ª opção (↑/↓ troca); `Usar esta versão` fica desabilitado até escolher, e o motivo aparece em texto | `role=status` |
+
+Durante os 2 s de espera, o botão fica desabilitado com o rótulo "Aguarde…", sem depender só da cor. O aviso "[Letra não fornecida]" é texto visível: ícone e título, nunca só cor.
+
+## 12. Ajuda (T10)
+
+Checagem automatizada (Edge headless via CDP), 2026-10-29:
+
+| Verificação | Resultado |
+|---|---|
+| `F1` com erro na tela Culto | abre `configurar-holyrics` com o foco no título do tópico (`h2`, `tabindex=-1`) |
+| `F1` dentro do diálogo "Não está no Holyrics" | abre `musica-nao-esta-no-holyrics`; **Voltar para onde estava** reabre o diálogo com o foco dentro dele |
+| Busca | filtra a cada tecla; o foco e o cursor continuam no campo; a contagem é anunciada (`aria-live`) |
+| Ordem de Tab | busca → Limpar → lista de tópicos → leitor (índice, links, Sim/Não, copiar) |
+| Índice "Nesta página" | leva o foco à seção (`h3` com `tabindex=-1`) e rola até ela |
+| Tópico atual na lista | `aria-current="page"` mais fundo, cor e barra à esquerda, não só cor |
+| Tabelas | `<th scope="col">`; rolagem horizontal só dentro da tabela; a página não rola na horizontal em 900×600 |
+| Markdown | nenhum `script`, `img`, `a`, `iframe` ou atributo inline; links internos são `<button>` |
+| Avaliação Sim/Não | `aria-pressed` + ícone ✓ + texto de status |
+| Tema escuro | tokens do DS; a nota (`md-note`) usa `warning-subtle` + borda `warning` (texto ~16:1 no escuro, ~17:1 no claro, aproximado) |
+
+Pontos de atenção:
+- A lista de tópicos fica antes do leitor no Tab. Em listas maiores, vale um "Pular para o tópico".
+- O nome do link "Ver ajuda sobre isto" é igual em vários lugares. Dentro de um mesmo erro ou diálogo há só um, e o contexto vem do título do erro. Se o leitor de tela listar links fora de contexto, acrescentar `aria-describedby` para o título do erro.
