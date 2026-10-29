@@ -97,13 +97,14 @@ O token **nunca volta** para a UI depois de salvo; só `tokenSaved` e `tokenHint
     "publishedBy": "Marta",                 // GAP: endpoint atual não expõe; opcional
     "updatedAt": null                       // GAP: necessário para SETLIST_CHANGED
   },
-  "destination": {                          // GetCurrentSchedule + GetLyricsPlaylist
-    "name": "Culto de Domingo 01/11",
-    "type": "service" | "event" | "temporary",
-    "datetime": "2026-11-01T10:00:00-03:00",
-    "eventId": "…" ,
+  "destination": {                          // GetCurrentSchedule + GetLyricsPlaylist (DestinationVM, abaixo)
+    "kind": "schedule" | "temporary",
+    "name": "Culto de Domingo 01/11",       // temporária: o nome que o Holyrics mostra ("Temporário")
+    "type": "service" | "event" | "temporary", // valor bruto do Holyrics, só para diagnóstico
+    "datetime": "2026-11-01T10:00:00-03:00" | null,   // OBRIGATORIAMENTE null quando kind = "temporary"
+    "eventId": "…" | null,
     "currentItems": [ { "id": "1792693855001", "title": "Bondade de Deus", "artist": "Isaias Saad" } ],
-    "check": "match" | "temporary" | "dateMismatch" | "unknown"
+    "check": "match" | "dateMismatch" | "unverifiable"
   },
   "items": [ /* ItemVM, abaixo */ ],
   "summary": { "total": 3, "ready": 2, "needsLink": 1, "chooseVersion": 0, "missing": 0, "repeated": 0 },
@@ -114,6 +115,17 @@ O token **nunca volta** para a UI depois de salvo; só `tokenSaved` e `tokenHint
   "error": null | AppError
 }
 ```
+
+### DestinationVM — dois tipos de destino
+
+Sem Holyrics Plan, só a playlist **selecionada** na interface do Holyrics é visível/editável. Na validação ao vivo, `GetCurrentSchedule` devolveu `type: "temporary"`, `name: "Temporário"` e `datetime` = **hora atual** (não é data de culto).
+
+| `kind` | Quando | `datetime` | `check` | Reconhecimento em `apply()` |
+|---|---|---|---|---|
+| `schedule` | `type` = `service` ou `event` (culto/evento da agenda) | data/hora do culto | `match` se o dia (fuso `America/Sao_Paulo`) = dia de `setlist.eventAt`; senão `dateMismatch` | só se `dateMismatch` |
+| `temporary` | `type` = `temporary` | **`null`** — o núcleo descarta o `datetime` do Holyrics para a UI nunca comparar "agora" com a data do setlist | sempre `unverifiable` | **sempre** (`destinationAck: true`) |
+
+Regra de UI: `kind = "temporary"` **nunca** exibe "Mesmo dia do setlist". O núcleo deve recusar `apply()` sem `destinationAck` quando `check ≠ "match"` (defesa em profundidade, não só na UI).
 
 ### ItemVM
 
@@ -126,7 +138,8 @@ O token **nunca volta** para a UI depois de salvo; só `tokenSaved` e `tokenHint
   "holyrics": null | { "id": "1792693855260", "title": "E Ele", "artist": "DROPS" },
   "matchedBy": null | "externalId" | "exactTitleArtist",
   "suggestion": null | { "id": "1792693855260", "title": "E Ele", "artist": "DROPS", "reason": "exactTitleArtist" },
-  "candidates": [],                          // chooseVersion: HolyricsSong[] com título/artista (não só IDs)
+  "candidates": [],                          // chooseVersion: HolyricsSong[] com título/artista (não só IDs) + "reason": "exactDuplicate" | "similar"
+  "approximate": false,                      // true: candidato só parecido (ex.: ’ × ' — pontuação é preservada) → sempre individual, nunca lote
   "repeatOf": null | 0,                      // repeated: posição da 1ª ocorrência
   "staleLink": null | { "oldId": "1611…", "reason": "notInLibrary" }   // vínculo existia mas ID sumiu
 }
@@ -143,6 +156,8 @@ O token **nunca volta** para a UI depois de salvo; só `tokenSaved` e `tokenHint
 | `repeated` | — | `repeated` |
 
 ## 4. Revisar músicas (T2, T2a, T2b)
+
+Regra do lote: `batch` contém **somente** exatos únicos (`state = needsLink`, `suggestion.reason = "exactTitleArtist"`, uma única música no catálogo com a mesma chave normalizada). Ambíguos (`chooseVersion`) e aproximados (`approximate: true`) vão para `individual`, **nunca** para `batch`. `selected: true` é só o padrão da UI; o núcleo recebe apenas os pares marcados em `confirmLinks`. Lote vazio (`batch: []`) com `individual`/`missing` não vazios tem estado próprio na UI.
 
 ```jsonc
 {
@@ -168,14 +183,14 @@ O token **nunca volta** para a UI depois de salvo; só `tokenSaved` e `tokenHint
 
 ```jsonc
 {
-  "destination": { "name": "Culto de Domingo 01/11", "type": "service", "check": "match" },
-  "before": [ { "id": "…", "title": "…", "artist": "…" } ],          // 7 itens
+  "destination": { "kind": "temporary", "name": "Temporário", "check": "unverifiable" },
+  "before": [ { "id": "…", "title": "…", "artist": "…" } ],          // lista COMPLETA (0..N); a UI decide como mostrar (>10 → 8 + "mostrar todas")
   "after":  [ { "position": 1, "id": "…", "title": "Mil Graus", "artist": "Renascer Praise" } ],
   "removedCount": 7,
   "leftOut": [ { "position": 4, "title": "Santo", "state": "missing" } ],
   "repeatedCollapsed": [ { "title": "A Boa Parte", "positions": [1, 3] } ],
   "requiresPartialAck": true,
-  "requiresDestinationAck": false,
+  "requiresDestinationAck": true,           // true se destination.kind = "temporary" ou check = "dateMismatch"
   "setlistSource": "live" | "cache",
   "planFingerprint": "sha256:…"            // enviado de volta em apply() para detectar mudanças
 }
@@ -271,7 +286,7 @@ Notificação: `{ "kind": "reminderReady" | "reminderPending" | "setlistChanged"
 | G1 | Distinguir "Confirmar vínculo" de "Não está no Holyrics" | `planSync` devolve `status: "absent"` + `suggestions` | Manter, com o mapeamento da seção 3; ou acrescentar `status: "suggested"` |
 | G2 | Candidatos ambíguos com título/artista | `candidates` são só IDs no caminho `ambiguous` | Devolver `HolyricsSong[]` |
 | G3 | Vínculo velho (ID sumiu) | Comentário no código; não sinaliza | `staleLink: { oldId }` no item |
-| G4 | Destino selecionado e checagem | Não exposto | `getDestination()` via `GetCurrentSchedule` + `check` |
+| G4 | Destino selecionado e checagem | Não exposto | `getDestination()` via `GetCurrentSchedule` → `kind` (`schedule`/`temporary`), `datetime` null na temporária, `check` (§3 DestinationVM) |
 | G5 | Progresso por etapa | `executeSync` é uma promessa só | Callback/evento `onStep` |
 | G6 | Restauração automática e "desfazer" | `executeSync` não restaura; backup não é retido | Restaurar + reler em falha; manter backup em memória e expor `restorePrevious()` com `canRestore` |
 | G7 | Códigos de erro estáveis | `error` é string | Enum `AppError.code` |

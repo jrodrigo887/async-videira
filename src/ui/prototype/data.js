@@ -24,9 +24,18 @@
   const SETLIST_ORDERED = { id: "async-test-setlist-ordered", title: "Culto de domingo — manhã", eventAt: "2026-11-01T10:00:00-03:00", publishedBy: "Marta" };
   const SETLIST_NIGHT = { id: "async-test-setlist-night", title: "Culto de domingo — noite", eventAt: "2026-11-01T19:00:00-03:00", publishedBy: "Marta" };
 
-  const DEST_OK = { name: "Culto de Domingo 01/11", type: "service", datetime: "2026-11-01T10:00:00-03:00", currentItems: PLAYLIST_BEFORE, check: "match" };
-  const DEST_TEMP = { name: "Temporário", type: "temporary", datetime: null, currentItems: PLAYLIST_BEFORE, check: "temporary" };
-  const DEST_OLD = { name: "Culto de Domingo 25/10", type: "service", datetime: "2026-10-25T10:00:00-03:00", currentItems: PLAYLIST_BEFORE, check: "dateMismatch" };
+  // Para testar o diálogo de substituição com 15 itens (?antes=15).
+  const PLAYLIST_LONG = [...PLAYLIST_BEFORE, ...[
+    ["Ninguém Explica Deus", "Preto no Branco"], ["Raridade", "Anderson Freire"], ["Me Atraiu", "Gabriela Rocha"], ["Tua Graça Me Basta", "Toque no Altar"],
+    ["Vida Aos Sepulcros", "Bethel Music"], ["Hosana", "Hillsong em Português"], ["Rendido Estou", "Aline Barros"], ["Deus de Milagres", "Ministério Zoe"],
+  ].map(([title, artist], i) => ({ id: String(1792693855020 + i), title, artist }))];
+
+  // Dois tipos de destino (view-models.md §3): culto da agenda (tem data) ou playlist temporária (sem data).
+  // Na validação ao vivo, sem Plan, GetCurrentSchedule devolveu type "temporary", name "Temporário" e datetime = agora;
+  // o núcleo deve entregar datetime null nesse caso para a UI não comparar a hora atual com a data do setlist.
+  const DEST_OK = { kind: "schedule", name: "Culto de Domingo 01/11", type: "service", datetime: "2026-11-01T10:00:00-03:00", currentItems: PLAYLIST_BEFORE, check: "match" };
+  const DEST_TEMP = { kind: "temporary", name: "Temporário", type: "temporary", datetime: null, currentItems: PLAYLIST_BEFORE, check: "unverifiable" };
+  const DEST_OLD = { kind: "schedule", name: "Culto de Domingo 25/10", type: "service", datetime: "2026-10-25T10:00:00-03:00", currentItems: PLAYLIST_BEFORE, check: "dateMismatch" };
 
   const ready = (position, songId, song, h) => ({ position, songId, song, state: "ready", holyrics: h, matchedBy: "externalId", suggestion: null, candidates: [], repeatOf: null, staleLink: null });
 
@@ -40,6 +49,10 @@
     santoAmbiguous: (p) => ({ position: p, songId: "fixture-videira-santo", song: { title: "Santo", artist: "Fernandinho" }, state: "chooseVersion", holyrics: null, matchedBy: null, suggestion: null, candidates: [SANTO_A, SANTO_B], repeatOf: null, staleLink: null }),
     promessasMissing: (p) => ({ position: p, songId: "fixture-videira-deus-de-promessas", song: { title: "Deus de Promessas", artist: "Davi Sacer" }, state: "missing", holyrics: null, matchedBy: null, suggestion: null, candidates: [], repeatOf: null, staleLink: null, simFoundOnReread: { id: "1793000000001", title: "Deus de Promessas", artist: "Davi Sacer" } }),
     milGrausStale: (p) => ({ position: p, songId: "fixture-videira-mil-graus", song: { title: "Mil Graus", artist: "Renascer Praise" }, state: "needsLink", holyrics: null, matchedBy: null, suggestion: { id: "1801000000004", title: "Mil Graus", artist: "Renascer Praise", reason: "exactTitleArtist" }, candidates: [], repeatOf: null, staleLink: { oldId: "1792693855267", reason: "notInLibrary" } }),
+    // Lote: exatos únicos (a normalização ignora acento e caixa: "Grande é o Senhor" = "Grande É o Senhor").
+    exact: (p, songId, title, artist, h) => ({ position: p, songId, song: { title, artist }, state: "needsLink", holyrics: null, matchedBy: null, suggestion: { ...h, reason: "exactTitleArtist" }, candidates: [], repeatOf: null, staleLink: null }),
+    // Aproximado: a pontuação é preservada na normalização, então ’ × ' não é exato → sempre individual.
+    aquietaApprox: (p) => ({ position: p, songId: "fixture-videira-aquieta", song: { title: "Aquieta Minh’alma", artist: "Ministério Zoe" }, state: "chooseVersion", approximate: true, holyrics: null, matchedBy: null, suggestion: null, candidates: [{ id: "1792693855004", title: "Aquieta Minh'alma", artist: "Ministério Zoe", createdAt: "2026-10-04", reason: "similar" }], repeatOf: null, staleLink: null }),
     aBoaParteStale: (p) => ({ position: p, songId: "fixture-videira-a-boa-parte", song: { title: "A Boa Parte", artist: "Florianópolis House Of Prayer e Nívea Soares" }, state: "needsLink", holyrics: null, matchedBy: null, suggestion: { id: "1801000000011", title: "A Boa Parte", artist: "Florianópolis House Of Prayer e Nívea Soares", reason: "exactTitleArtist" }, candidates: [], repeatOf: null, staleLink: { oldId: "1792693855255", reason: "notInLibrary" } }),
   };
 
@@ -81,10 +94,38 @@
       group: "Fluxo principal",
       data: () => base({ items: [item.aBoaParte(0), item.eEleReady(1), item.aBoaParteRepeat(2, 0)] }),
     },
-    pendencias: {
-      label: "Ambígua + ausente + sugestão",
+    temporaria: {
+      label: "Destino = playlist temporária (caso real sem Plan)",
       group: "Fluxo principal",
-      data: () => base({ setlistChoices: [SETLIST_ORDERED, SETLIST_NIGHT], items: [item.milGraus(0), item.santoAmbiguous(1), item.aBoaParte(2), item.eEleSuggest(3), item.promessasMissing(4)] }),
+      data: () => base({ destination: DEST_TEMP, items: [item.milGraus(0), item.aBoaParte(1), item.eEleReady(2)] }),
+    },
+    pendencias: {
+      label: "Lista longa: ambígua + ausente + sugestão (7)",
+      group: "Fluxo principal",
+      data: () => base({ setlistChoices: [SETLIST_ORDERED, SETLIST_NIGHT], items: [
+        item.milGraus(0), item.santoAmbiguous(1), item.aBoaParte(2), item.eEleSuggest(3),
+        ready(4, "fixture-videira-bondade", { title: "Bondade de Deus", artist: "Isaias Saad" }, PLAYLIST_BEFORE[0]),
+        item.promessasMissing(5),
+        ready(6, "fixture-videira-lugar-secreto", { title: "Lugar Secreto", artist: "Gabriela Rocha" }, PLAYLIST_BEFORE[1]),
+      ] }),
+    },
+    lote: {
+      label: "Vínculos em lote (4 exatos + 2 individuais)",
+      group: "Fluxo principal",
+      data: () => base({ items: [
+        item.milGraus(0),
+        item.eEleSuggest(1),
+        item.exact(2, "fixture-videira-bondade", "Bondade de Deus", "Isaias Saad", PLAYLIST_BEFORE[0]),
+        item.exact(3, "fixture-videira-lugar-secreto", "Lugar Secreto", "Gabriela Rocha", PLAYLIST_BEFORE[1]),
+        item.exact(4, "fixture-videira-grande", "Grande É o Senhor", "Adhemar de Campos", PLAYLIST_BEFORE[4]),
+        item.aquietaApprox(5),
+        item.santoAmbiguous(6),
+      ] }),
+    },
+    loteVazio: {
+      label: "Lote vazio (só decisões individuais)",
+      group: "Fluxo principal",
+      data: () => base({ items: [item.milGraus(0), item.aquietaApprox(1), item.santoAmbiguous(2), item.promessasMissing(3)] }),
     },
     jaIgual: {
       label: "Playlist já está igual",
@@ -140,11 +181,6 @@
       group: "Erros comuns",
       data: () => base({ connections: { ...structuredClone(connOk), videira: { status: "tokenInvalid", detail: {} } }, setlist: null, items: [], error: { code: "VIDEIRA_TOKEN_INVALID", severity: "error", retryable: false, params: {}, technical: { message: "401 Unauthorized" } } }),
     },
-    cultoErrado: {
-      label: "Temporário selecionado no Holyrics",
-      group: "Erros comuns",
-      data: () => base({ destination: DEST_TEMP, items: [item.milGraus(0), item.aBoaParte(1), item.eEleReady(2)] }),
-    },
     dataErrada: {
       label: "Culto de outra data selecionado",
       group: "Erros comuns",
@@ -194,5 +230,5 @@
 
   const REQUIRED_PERMISSIONS = ["GetVersion", "GetTokenInfo", "GetAPIServerInfo", "GetHolyricsPlanInfo", "SearchLyrics", "GetSongs", "GetLyrics", "GetLyricsPlaylist", "AddLyricsToPlaylist", "RemoveFromLyricsPlaylist", "GetCurrentSchedule"];
 
-  window.PROTO_DATA = { scenarios, reconciliation, history, links, REQUIRED_PERMISSIONS, PLAYLIST_BEFORE };
+  window.PROTO_DATA = { scenarios, reconciliation, history, links, REQUIRED_PERMISSIONS, PLAYLIST_BEFORE, PLAYLIST_LONG };
 })();

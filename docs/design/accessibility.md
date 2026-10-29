@@ -84,3 +84,37 @@ Sala de mídia costuma ser escura: o tema automático é o padrão, e a troca é
 - Altura mínima 600 px: a barra de ação é fixa no rodapé da área de conteúdo; a lista rola por dentro. Diálogo de substituição tem as duas colunas com rolagem própria e altura máx. `80vh`.
 - O tamanho e a posição da janela são lembrados entre execuções.
 - Alvo mínimo 40 px (Mesa) para botões; 44 px para a linha de música inteira clicável e para controles da bandeja.
+
+## 9. Checagem de teclado nos diálogos (2026-10-29)
+
+**Como foi feita:** Edge headless (Chromium) controlado pelo DevTools Protocol, com teclas reais (`Input.dispatchKeyEvent`: Tab, Shift+Tab, Esc, Enter) sobre o protótipo, 14 Tabs para frente e 14 para trás por diálogo. É uma checagem automatizada, equivalente à manual. **Não** inclui leitor de tela real (NVDA/Narrador): isso ainda precisa ser validado com uma pessoa.
+
+| Diálogo (deep-link) | Foco inicial | Ciclo de Tab | Sai do diálogo? | Shift+Tab | Esc |
+|---|---|---|---|---|---|
+| Substituir, pendências + parcial (`?cenario=pendencias&dialogo=confirm`) | Cancelar | caixa "Publicar mesmo sem" → Cancelar (Substituir desabilitado fica fora do Tab) | não | mesmo ciclo, invertido | fecha |
+| Substituir, temporária (`?cenario=temporaria&dialogo=confirm`) | Cancelar | "Estou no culto certo" → Cancelar | não | idem | fecha |
+| Substituir, 15 itens (`?cenario=pronto&dialogo=confirm&antes=15`) | Cancelar | Substituir → "+ 7 músicas — mostrar todas" → Cancelar | não | idem | fecha |
+| Escolher versão (`?cenario=pendencias&dialogo=choose`) | 1ª opção | grupo de opções (1 parada; ↑/↓ troca) → Cancelar | não | idem | fecha |
+| Conferir parecida (`?cenario=loteVazio&dialogo=choose`) | opção | opção → Cancelar | não | idem | fecha |
+| Não está no Holyrics (`?cenario=pendencias&dialogo=missing`) | Abrir no Holyrics | Procurar na biblioteca → Fechar → Ler de novo → Abrir no Holyrics | não | idem | fecha |
+
+Também passaram:
+- **Enter** com o foco inicial do diálogo de substituição **cancela**; não publica.
+- **Esc** devolve o foco ao botão que abriu o diálogo.
+- O diálogo abre rolado no topo, com o título visível. Antes, o foco em Cancelar rolava o diálogo e escondia o título; corrigido com `focus({ preventScroll: true })`.
+- "Mostrar todas" expõe `aria-expanded` e `aria-controls`, e as 15 linhas aparecem ao expandir.
+
+Pontos de atenção:
+- No grupo de radio, um Tab entra e outro sai; a troca de opção é por ↑/↓, que é o padrão nativo. Isso precisa constar na ajuda de teclado da versão final.
+- Botões desabilitados ficam fora da ordem de Tab. O motivo aparece em texto ao lado (`.why`) e está ligado ao botão principal por `aria-describedby`.
+
+## 10. Contraste dos elementos novos
+
+| Elemento | Tokens | Claro | Escuro |
+|---|---|---|---|
+| Chip "Sem data para conferir" | `content-muted` / `surface-muted` | ~6.6:1 | ~7.5:1 |
+| "+ N músicas — mostrar todas" | `primary` / `surface-muted` | ~5:1 | ~7:1 |
+| Rótulos de grupo (PRECISAM DE VOCÊ…) | `content-muted` / `surface` | ~7.5:1 | ~9:1 |
+| Barra "N selecionados" | `content` / `surface-muted` | ~17:1 | ~13:1 |
+
+Valores aproximados, calculados a partir dos HSL do DS. As capturas dos dois temas foram conferidas visualmente; falta a medição com ferramenta no build final.

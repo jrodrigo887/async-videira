@@ -92,7 +92,8 @@ Abrir app ─► T1 carrega sozinho (setlist + biblioteca + destino)
 
 ### Fluxos alternativos
 
-- **Destino errado:** T1 mostra alerta no cartão "Destino" ("Está selecionada a playlist Temporário"). Ação: o operador seleciona o culto no Holyrics e clica em `Verificar de novo`. Se insistir, T3 exige marcar "Confirmo que é este o culto".
+- **Destino = playlist temporária (caso mais comum sem Plan):** o cartão "Destino" mostra **Playlist temporária** com "Sem data para conferir" (nunca "Mesmo dia do setlist"), e T3 sempre exige marcar **Estou no culto certo**, porque não há data a validar.
+- **Destino = culto da agenda de outra data:** T1 mostra um alerta com as duas datas. O operador seleciona o culto certo no Holyrics e clica em `Verificar de novo`; se insistir, T3 exige marcar "Confirmo que {culto} é o destino certo".
 - **Publicação parcial:** com itens pendentes não resolvidos, T3 mostra a lista do que fica de fora e uma caixa desmarcada "Publicar mesmo sem estas 1 música". Sem marcar, o botão fica desabilitado com o motivo ao lado.
 - **Nada a fazer:** se a playlist já é igual ao alvo, T1 mostra "A playlist já está igual ao setlist" e o primário vira `Conferir de novo` (não reescreve).
 - **Falha durante publicação:** T4 → T5 "Não deu certo. A playlist voltou ao que era." com lista conferida; ou, se a restauração falhar, T5 lista os itens originais para refazer manualmente no Holyrics, com `Copiar lista`.

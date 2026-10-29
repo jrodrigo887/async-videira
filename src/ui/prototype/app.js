@@ -52,6 +52,8 @@
     S.recon = { sel: {}, picks: {}, done: false };
     S.onb = { step: "welcome", hToken: "", vToken: "", hTest: null, vTest: null, hTries: 0, err: {}, showH: false, showV: false, testing: null };
     S.settingsMsg = null;
+    S.songView = null;
+    S.readyOpen = false;
   }
 
   // ---------------------------------------------------------------- utilidades
@@ -114,7 +116,10 @@
   const holyricsDown = () => S.data.connections.holyrics.status !== "ok";
   const targetItems = () => S.data.items.filter((i) => i.state === "ready");
   const leftOut = () => S.data.items.filter((i) => ["needsLink", "chooseVersion", "missing"].includes(i.state));
-  const destSuspect = () => S.data.destination && S.data.destination.check !== "match";
+  // Temporária não tem data para conferir; culto da agenda com data diferente é suspeito. Ambos exigem reconhecimento.
+  const destSuspect = () => S.data.destination && (S.data.destination.kind === "temporary" || S.data.destination.check !== "match");
+  const isTemp = () => S.data.destination && S.data.destination.kind === "temporary";
+  const destLabel = () => isTemp() ? "a playlist temporária do Holyrics" : `a playlist de “${esc(S.data.destination.name)}”`;
 
   function primaryForCulto() {
     const d = S.data;
@@ -127,7 +132,7 @@
     if (c.ready === 0) return { label: "Publicar no Holyrics", disabled: true, hint: "Nenhuma música do setlist está no Holyrics ainda." };
     if (d.alreadyApplied) return { label: "Conferir de novo", act: "prepare", hint: `${icon("check")} A playlist do Holyrics já está igual ao setlist.` };
     if (c.missing > 0) return { label: "Publicar no Holyrics", act: "openConfirm", hint: `${plural(c.missing, "música vai", "músicas vão")} ficar de fora. Você confirma antes.` };
-    return { label: "Publicar no Holyrics", act: "openConfirm", hint: `A playlist de “${esc(d.destination.name)}” será substituída. Você confirma antes.` };
+    return { label: "Publicar no Holyrics", act: "openConfirm", hint: `${destLabel().replace(/^a/, "A")} será substituída. Você confirma antes.` };
   }
 
   // ---------------------------------------------------------------- shell
@@ -151,7 +156,7 @@
     if (S.dialog && !dialogWasOpen) {
       dialogReturnKey = focusKey;
       const t = $dialog.querySelector("[data-autofocus]") || $dialog.querySelector("button, input, select");
-      t && t.focus();
+      t && t.focus({ preventScroll: true }); // foco em Cancelar sem rolar o diálogo para baixo do título
     } else if (!S.dialog && dialogWasOpen) {
       restoreFocus(dialogReturnKey);
     } else if (S.screen !== lastScreen) {
@@ -316,17 +321,19 @@
   function renderDestination() {
     const dest = S.data.destination;
     if (!dest) return "";
-    const typeLabel = { service: "Culto", event: "Evento", temporary: "Playlist temporária" }[dest.type];
+    const temp = dest.kind === "temporary";
+    const typeLabel = temp ? "Playlist temporária" : dest.type === "event" ? "Evento da agenda" : "Culto da agenda";
     let check;
-    if (dest.check === "match") check = toneChip("ok", "check", "Mesmo dia do setlist");
-    else if (dest.check === "temporary") check = callout("warn", "alert", "Está selecionada a playlist Temporário, não um culto", "Se o culto de domingo já existe no Holyrics, selecione-o lá e clique em Verificar de novo.");
+    if (temp) check = `${toneChip("neutral", "info", "Sem data para conferir")}<p class="sm muted" style="margin-top:.5rem">É a playlist aberta no Holyrics agora. Ela não tem data de culto, então o app não consegue conferir se é a certa: você confirma antes de substituir.</p>`;
+    else if (dest.check === "match") check = toneChip("ok", "check", "Mesmo dia do setlist");
     else if (dest.check === "dateMismatch") check = callout("warn", "alert", `O culto selecionado é de ${esc(fmtDate(dest.datetime).slice(0, 5))}, o setlist é de ${esc(fmtDate(S.data.setlist.eventAt).slice(0, 5))}`, "Confira se é o culto certo. Se não for, selecione o culto certo no Holyrics.");
+    const count = dest.currentItems.length ? `${plural(dest.currentItems.length, "música", "músicas")} na playlist agora` : "playlist vazia agora";
     return `
       <section class="ds-card stack-sm dest-card" aria-labelledby="dest-h">
-        <div><h2 class="ds-h2" id="dest-h">Destino no Holyrics</h2><p class="dest-name">${esc(dest.name)}</p>
-          <p class="sm muted">${esc(typeLabel)}${dest.datetime ? ` · ${esc(fmtShort(dest.datetime))}` : ""} · ${plural(dest.currentItems.length, "música", "músicas")} na playlist agora</p></div>
+        <div><h2 class="ds-h2" id="dest-h">Destino no Holyrics</h2><p class="dest-name">${temp ? "Playlist temporária" : esc(dest.name)}</p>
+          <p class="sm muted">${temp ? `Aparece como “${esc(dest.name)}” no Holyrics` : esc(typeLabel)}${!temp && dest.datetime ? ` · ${esc(fmtShort(dest.datetime))}` : ""} · ${count}</p></div>
         <div class="dest-check">${check}</div>
-        ${dest.check !== "match" ? "" : `<p class="sm muted dest-help">O app só consegue mudar o culto que está <strong>selecionado</strong> no Holyrics. Para trocar, selecione o culto lá e clique em Verificar de novo.</p>`}
+        ${!temp && dest.check === "match" ? `<p class="sm muted dest-help">O app só consegue mudar o que está <strong>selecionado</strong> no Holyrics. Para trocar, selecione o culto lá e clique em Verificar de novo.</p>` : ""}
         <button class="ds-button-secondary btn-sm dest-btn" data-act="recheckDest">${icon("refresh")}Verificar de novo</button>
       </section>`;
   }
@@ -337,10 +344,32 @@
     const counted = c.total - c.repeated;
     const chips = Object.keys(STATE_META).filter((k) => c[k] > 0).map((k) => chip(k, `${c[k]} ${c[k] === 1 && k === "ready" ? "pronta" : STATE_META[k].many}`)).join("");
     if (!items.length) return `<h2 class="ds-h2" id="songs-h">Músicas do setlist</h2><p class="muted" style="margin-top:.5rem">Este setlist não tem músicas. Peça à liderança para conferir no Videira Music.</p>`;
+    // Mais de 5 músicas com pendência: agrupa por estado (pendentes primeiro, prontas recolhidas).
+    const pending = items.filter((i) => ["needsLink", "chooseVersion", "missing"].includes(i.state));
+    const canGroup = items.length > 5 && pending.length > 0;
+    const grouped = canGroup && S.songView !== "order";
+    const toggle = canGroup ? `<div class="seg" role="group" aria-label="Organizar músicas">
+        <button data-act="songView" data-arg="state" aria-pressed="${grouped}">Por estado</button>
+        <button data-act="songView" data-arg="order" aria-pressed="${!grouped}">Na ordem do setlist</button></div>` : "";
+    let list;
+    if (grouped) {
+      const repeated = items.filter((i) => i.state === "repeated");
+      const ready = items.filter((i) => i.state === "ready");
+      list = `
+        <h3 class="group-h" id="g-pend">Precisam de você (${pending.length})</h3>
+        <ol class="song-list" aria-labelledby="g-pend">${pending.map(renderSongRow).join("")}</ol>
+        ${repeated.length ? `<h3 class="group-h" id="g-rep">Repetidas (${repeated.length})</h3><ol class="song-list" aria-labelledby="g-rep">${repeated.map(renderSongRow).join("")}</ol>` : ""}
+        <details class="group-ready" ${S.readyOpen ? "open" : ""} data-toggle="readyOpen"><summary class="group-h">Prontas (${ready.length}) <span class="sm muted" style="font-weight:400;margin-left:.5rem;text-transform:none;letter-spacing:0">— ${S.readyOpen ? "recolher" : "mostrar"}</span></summary>
+          <ol class="song-list">${ready.map(renderSongRow).join("")}</ol></details>`;
+    } else {
+      list = `<ol class="song-list">${items.map(renderSongRow).join("")}</ol>`;
+    }
     return `
-      <div class="row between"><h2 class="ds-h2" id="songs-h">Músicas do setlist</h2></div>
-      <div class="summary" style="margin-top:.75rem"><strong>${c.ready} de ${counted} ${counted === 1 ? "música pronta" : "músicas prontas"}</strong><span class="row-wrap">${chips}</span></div>
-      <ol class="song-list">${items.map(renderSongRow).join("")}</ol>`;
+      <div class="songs-sticky">
+        <div class="row between" style="flex-wrap:wrap"><h2 class="ds-h2" id="songs-h">Músicas do setlist</h2>${toggle}</div>
+        <div class="summary" style="margin-top:.5rem" aria-live="polite"><strong>${c.ready} de ${counted} ${counted === 1 ? "música pronta" : "músicas prontas"}</strong><span class="row-wrap">${chips}</span></div>
+      </div>
+      ${list}`;
   }
 
   function renderSongRow(it) {
@@ -351,8 +380,8 @@
       support = it.staleLink ? "A música vinculada não existe mais nesta biblioteca. Achamos uma igual." : `Achamos “${esc(it.suggestion.title)}” de ${esc(it.suggestion.artist)} no Holyrics com o mesmo nome.`;
       action = `<button class="ds-button-secondary btn-sm" data-act="go" data-arg="review">Revisar</button>`;
     } else if (it.state === "chooseVersion") {
-      support = `Há ${it.candidates.length} músicas com este nome no Holyrics.`;
-      action = `<button class="ds-button-secondary btn-sm" data-act="openChoose" data-arg="${it.position}">Escolher</button>`;
+      support = it.approximate ? `Achamos “${esc(it.candidates[0].title)}”: nome parecido, mas não igual.` : `Há ${it.candidates.length} músicas com este nome no Holyrics.`;
+      action = `<button class="ds-button-secondary btn-sm" data-act="openChoose" data-arg="${it.position}">${it.approximate ? "Conferir" : "Escolher"}</button>`;
     } else if (it.state === "missing") {
       support = "Precisa ser cadastrada no Holyrics antes.";
       action = `<button class="ds-button-secondary btn-sm" data-act="openMissing" data-arg="${it.position}">Como resolver</button>`;
@@ -362,7 +391,7 @@
     return `<li class="song-row ${it.state === "repeated" ? "is-repeated" : ""}" aria-label="Posição ${it.position + 1}, ${esc(it.song.title)}, ${esc(it.song.artist)}, ${meta.label}">
       <span class="song-pos" aria-hidden="true">${it.position + 1}</span>
       <div><p class="song-title">${esc(it.song.title)}</p><p class="song-meta">${it.state === "ready" ? esc(it.song.artist) : `${esc(it.song.artist)} · ${support}`}</p></div>
-      ${chip(it.state)}
+      ${it.approximate && it.state === "chooseVersion" ? chip(it.state, "Conferir parecida") : chip(it.state)}
       <span class="action-slot">${action}</span>
     </li>`;
   }
@@ -376,10 +405,15 @@
     const selCount = batch.filter((i) => S.review.sel[i.songId] !== false).length;
     const nothing = !batch.length && !individual.length;
 
+    const justLinked = S.flash && S.flash.kind === "linked";
     const batchHtml = batch.length ? `
       <section class="ds-card stack-sm" aria-labelledby="batch-h">
-        <h2 class="ds-h2" id="batch-h">Encontramos ${plural(batch.length, "música", "músicas")} com o mesmo nome e artista</h2>
-        <p class="sm muted">Confira se são as mesmas. Desmarque a que não for. Depois de vincular, nas próximas semanas elas entram sozinhas.</p>
+        <h2 class="ds-h2" id="batch-h">Mesmo nome e mesmo artista (${batch.length})</h2>
+        <p class="sm muted">Só entram aqui músicas com uma única opção igual no Holyrics. Confira cada par e desmarque o que não for a mesma música.</p>
+        <div class="row between batch-bar">
+          <p aria-live="polite"><strong>${plural(selCount, "selecionado", "selecionados")}</strong> <span class="muted">de ${batch.length}</span></p>
+          <div class="row-wrap"><button class="ds-button-ghost btn-sm" data-act="selAll" data-arg="1" ${selCount === batch.length || S.linking ? "disabled" : ""}>Marcar todos</button><button class="ds-button-ghost btn-sm" data-act="selAll" data-arg="0" ${selCount === 0 || S.linking ? "disabled" : ""}>Desmarcar todos</button></div>
+        </div>
         <ul class="review-list">${batch.map((i) => {
           const on = S.review.sel[i.songId] !== false;
           return `<li class="review-item ${on ? "" : "is-off"}"><label class="check">
@@ -392,12 +426,16 @@
             ${i.staleLink ? `<p class="xs subtle" style="margin:.5rem 0 0 2rem">Vínculo antigo fica no histórico · <span class="mono">${esc(i.staleLink.oldId)} → ${esc(i.suggestion.id)}</span></p>` : ""}
           </li>`;
         }).join("")}</ul>
+      </section>` : (!justLinked && (individual.length || missing.length)) ? `
+      <section class="ds-card stack-sm" aria-labelledby="batch-h">
+        <h2 class="ds-h2" id="batch-h">Nenhuma música para confirmar em lote</h2>
+        <p class="sm muted">Só entram no lote músicas com nome e artista iguais e uma única opção no Holyrics. As músicas abaixo precisam de uma decisão por vez.</p>
       </section>` : "";
 
     const indHtml = individual.length ? `
       <section class="ds-card stack-sm" aria-labelledby="ind-h">
-        <h2 class="ds-h2" id="ind-h">Escolha a versão certa</h2>
-        <p class="sm muted">Há mais de uma música com o mesmo nome no Holyrics. Escolha uma por vez.</p>
+        <h2 class="ds-h2" id="ind-h">Decida uma por vez (${individual.length})</h2>
+        <p class="sm muted">Mais de uma opção com o mesmo nome, ou nome só parecido. Estas nunca entram no lote.</p>
         <ol class="song-list">${individual.map(renderSongRow).join("")}</ol>
       </section>` : "";
 
@@ -411,7 +449,7 @@
     const done = nothing ? callout("ok", "check", "Tudo revisado", missing.length ? `Só falta resolver ${plural(missing.length, "música que não está", "músicas que não estão")} no Holyrics, ou publicar sem ${missing.length === 1 ? "ela" : "elas"}.` : "Todas as músicas estão prontas para publicar.") : "";
 
     const p = batch.length
-      ? { label: S.linking ? "Vinculando…" : `Vincular ${plural(selCount, "música", "músicas")}`, act: "linkBatch", disabled: selCount === 0 || S.linking, hint: selCount === 0 ? "Marque ao menos uma música." : "O vínculo fica salvo no Videira Music." }
+      ? { label: S.linking ? "Confirmando…" : `Confirmar ${plural(selCount, "vínculo", "vínculos")}`, act: "linkBatch", disabled: selCount === 0 || S.linking, hint: selCount === 0 ? "Marque ao menos uma música." : "O vínculo fica salvo no Videira Music. Dá para desfazer." }
       : { label: "Voltar ao culto", act: "go", arg: "culto", hint: "" };
 
     return page(`
@@ -436,11 +474,11 @@
       const it = item(g.pos);
       const opts = it.candidates.map((c, idx) => `<label class="radio-card"><input type="radio" name="pick" value="${esc(c.id)}" data-change="pickCandidate" ${g.pick === c.id ? "checked" : ""} ${idx === 0 ? "data-autofocus" : ""}>
         <div><strong>${esc(c.title)}</strong> — ${esc(c.artist)}<div class="sm muted">Cadastrada no Holyrics em ${esc(fmtDate(c.createdAt))} · <span class="mono">${esc(c.id)}</span></div></div></label>`).join("");
-      return dialogShell(`Qual “${esc(it.song.title)}” é a do setlist?`,
-        `<p class="sm muted">No Videira: <strong>${esc(it.song.title)}</strong> — ${esc(it.song.artist)}. No Holyrics há ${it.candidates.length} com este nome:</p>
+      return dialogShell(it.approximate ? `“${esc(it.song.title)}” é esta música?` : `Qual “${esc(it.song.title)}” é a do setlist?`,
+        `<p class="sm muted">No Videira: <strong>${esc(it.song.title)}</strong> — ${esc(it.song.artist)}. ${it.approximate ? "No Holyrics achamos uma com nome parecido, mas não igual. Confira antes de vincular:" : `No Holyrics há ${it.candidates.length} com este nome:`}</p>
          <fieldset style="border:0;padding:0;margin:0" class="stack-sm"><legend class="sr-only">Versões no Holyrics</legend>${opts}
          <label class="radio-card"><input type="radio" name="pick" value="none" data-change="pickCandidate" ${g.pick === "none" ? "checked" : ""}><div><strong>Nenhuma destas</strong><div class="sm muted">A música fica como “Não está no Holyrics”.</div></div></label></fieldset>`,
-        `<span class="why">${g.pick ? "" : "Escolha uma opção."}</span><button class="ds-button-secondary" data-act="closeDialog">Cancelar</button><button class="ds-button" data-act="confirmChoose" ${g.pick ? "" : "disabled"}>Usar esta versão</button>`);
+        `<span class="why">${g.pick ? "" : "Escolha uma opção."}</span><button class="ds-button-secondary" data-act="closeDialog">Cancelar</button><button class="ds-button" data-act="confirmChoose" ${g.pick ? "" : "disabled"}>${g.pick === "none" ? "Marcar como não encontrada" : it.approximate ? "Usar esta música" : "Usar esta versão"}</button>`);
     }
     if (g.type === "missing") {
       const it = item(g.pos);
@@ -488,17 +526,32 @@
     const repeated = d.items.filter((i) => i.state === "repeated");
     const needPartial = out.length > 0, needDest = destSuspect();
     const blocked = (needPartial && !g.ackPartial) || (needDest && !g.ackDest);
-    const why = needPartial && !g.ackPartial ? "Marque para publicar sem essas músicas." : needDest && !g.ackDest ? "Confirme o destino para continuar." : "";
-    return dialogShell(`Substituir a playlist de “${esc(d.destination.name)}”?`, `
-      ${callout("warn", "alert", `As ${plural(before.length, "música de hoje sai", "músicas de hoje saem")} da playlist`, "Elas continuam na biblioteca do Holyrics; só saem deste culto. Guardamos uma cópia para voltar se der errado.")}
+    const temp = isTemp();
+    const why = needPartial && !g.ackPartial ? "Marque para publicar sem essas músicas." : needDest && !g.ackDest ? (temp ? "Marque “Estou no culto certo” para continuar." : "Confirme o destino para continuar.") : "";
+    // Colunas sem rolagem escondida: até 10 itens aparecem inteiros; acima disso, 8 + botão "Mostrar mais N".
+    const col = (key, rows, renderRow) => {
+      const limit = rows.length > 10 && !g[key] ? 8 : rows.length;
+      const hidden = rows.length - limit;
+      return `<ol id="col-${key}">${rows.slice(0, limit).map(renderRow).join("")}</ol>
+        ${rows.length > 10 ? `<button class="diff-more" data-act="toggleCol" data-arg="${key}" aria-expanded="${!!g[key]}" aria-controls="col-${key}">${g[key] ? "Mostrar menos" : `+ ${plural(hidden, "música", "músicas")} — mostrar todas`}</button>` : ""}`;
+    };
+    const risk = before.length
+      ? callout("warn", "alert", `As ${plural(before.length, "música de hoje sai", "músicas de hoje saem")} da playlist`, "Elas continuam na biblioteca do Holyrics; só saem desta playlist. Guardamos uma cópia para voltar se der errado.")
+      : callout("info", "info", "A playlist está vazia agora", `Nada vai sair. ${after.length === 1 ? "A música do setlist entra" : `As ${after.length} músicas do setlist entram`} nela.`);
+    return dialogShell(temp ? "Substituir a playlist temporária do Holyrics?" : `Substituir a playlist de “${esc(d.destination.name)}”?`, `
+      ${risk}
       <div class="diff-columns">
-        <div class="diff-col before"><h3>Hoje no Holyrics (${before.length})</h3><ol>${before.map((s, i) => `<li><span class="n">${i + 1}</span><span class="t">${esc(s.title)}</span><span class="tag">sai</span></li>`).join("") || `<li class="muted">Playlist vazia</li>`}</ol></div>
-        <div class="diff-col"><h3>Vai ficar (${after.length})</h3><ol>${after.map((s, i) => `<li><span class="n">${i + 1}</span><span><strong>${esc(s.song.title)}</strong><br><span class="xs subtle" style="font-weight:400">${esc(s.song.artist)}</span></span></li>`).join("")}</ol></div>
+        <div class="diff-col before"><h3>Hoje no Holyrics (${before.length})</h3>${before.length
+          ? col("allBefore", before, (s, i) => `<li><span class="n">${i + 1}</span><span class="t">${esc(s.title)}</span><span class="tag">sai</span></li>`)
+          : `<p class="diff-empty">Vazia — nenhuma música vai sair.</p>`}</div>
+        <div class="diff-col"><h3>Vai ficar (${after.length})</h3>${col("allAfter", after, (s, i) => `<li><span class="n">${i + 1}</span><span><strong>${esc(s.song.title)}</strong><br><span class="xs subtle" style="font-weight:400">${esc(s.song.artist)}</span></span></li>`)}</div>
       </div>
       ${repeated.length ? `<p class="sm muted">${icon("repeat")} ${repeated.map((r) => `“${esc(r.song.title)}”`).join(", ")} aparece 1 vez (estava repetida no setlist).</p>` : ""}
       ${d.setlistSource === "cache" ? `<p class="sm muted">${icon("info")} Sem internet: usando o setlist baixado ${esc(fmtShort(d.setlistCachedAt))}. O aviso ao Videira será enviado depois.</p>` : ""}
       ${needPartial ? `<label class="check ds-card-muted" style="color:inherit"><input type="checkbox" data-change="ackPartial" ${g.ackPartial ? "checked" : ""}><span>Publicar mesmo sem: <strong>${out.map((o) => esc(o.song.title)).join(", ")}</strong><br><span class="sm muted">${out.length === 1 ? "Ela fica" : "Elas ficam"} fora da playlist até você resolver.</span></span></label>` : ""}
-      ${needDest ? `<label class="check ds-card-muted" style="color:inherit"><input type="checkbox" data-change="ackDest" ${g.ackDest ? "checked" : ""}><span>Confirmo que <strong>${esc(d.destination.name)}</strong> é o destino certo</span></label>` : ""}`,
+      ${needDest ? `<label class="check ds-card-muted" style="color:inherit"><input type="checkbox" data-change="ackDest" ${g.ackDest ? "checked" : ""}>${temp
+        ? `<span><strong>Estou no culto certo</strong><br><span class="sm muted">A playlist temporária não tem data, então o app não consegue conferir. Olhe no Holyrics se é a playlist que vai para o telão agora.</span></span>`
+        : `<span>Confirmo que <strong>${esc(d.destination.name)}</strong> é o destino certo<br><span class="sm muted">A data do culto selecionado é diferente da data do setlist.</span></span>`}</label>` : ""}`,
       `<span class="why">${why}</span><button class="ds-button-secondary" data-act="closeDialog" data-autofocus>Cancelar</button><button class="ds-button-danger" data-act="apply" ${blocked ? "disabled" : ""}>${icon("alert")}Substituir playlist</button>`, true);
   }
 
@@ -854,7 +907,8 @@
     async recheckDest() {
       const wasSuspect = destSuspect();
       S.flash = null; render(); await sleep(500);
-      if (wasSuspect) { S.data.destination = DEST_OK(); S.flash = { title: `Agora está selecionado: ${S.data.destination.name}.` }; }
+      if (isTemp()) S.flash = { tone: "info", icon: "info", title: "Continua selecionada a playlist temporária.", body: "Se o culto existe na agenda do Holyrics, selecione-o lá; senão, siga com a temporária e confirme antes de substituir." };
+      else if (wasSuspect) { S.data.destination = DEST_OK(); S.flash = { title: `Agora está selecionado: ${S.data.destination.name}.` }; }
       else S.flash = { tone: "info", icon: "info", title: `Continua selecionado: ${S.data.destination.name}.` };
       render();
     },
@@ -888,6 +942,9 @@
       render();
     },
     toggleSel(arg, el) { S.review.sel[arg] = el.checked; render(); },
+    selAll(arg) { S.data.items.filter((i) => i.state === "needsLink").forEach((i) => { S.review.sel[i.songId] = arg === "1"; }); render(); },
+    songView(arg) { S.songView = arg; render(); },
+    toggleCol(arg) { S.dialog[arg] = !S.dialog[arg]; render(); },
     async linkBatch() {
       const batch = S.data.items.filter((i) => i.state === "needsLink" && S.review.sel[i.songId] !== false);
       if (!batch.length) return;
@@ -895,7 +952,7 @@
       S.linking = true; render(); await sleep(800); S.linking = false;
       batch.forEach((i) => { i.state = "ready"; i.holyrics = i.suggestion; i.matchedBy = "externalId"; S.sessionLinks.unshift({ title: i.song.title, artist: i.song.artist, holyricsId: i.suggestion.id, since: nowIso(), source: i.staleLink ? "reconciliation" : "batch" }); i.staleLink = null; });
       // itens repetidos que dependiam do mesmo vínculo continuam "repetida"
-      S.flash = { title: `${plural(batch.length, "música vinculada", "músicas vinculadas")}.`, body: "Nas próximas semanas elas entram sozinhas.", undo: snap };
+      S.flash = { kind: "linked", title: `${plural(batch.length, "vínculo confirmado", "vínculos confirmados")}.`, body: "Nas próximas semanas estas músicas entram sozinhas.", undo: snap };
       render(); announce(S.flash.title);
     },
     undoFlash() {
@@ -1033,6 +1090,8 @@
     else if (ctrl && ev.key === "Enter") { const b = document.querySelector(".action-bar [data-primary]:not([disabled])"); if (b) { ev.preventDefault(); b.click(); } }
   });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (S.theme === "system") render(); });
+  // <details> nativo: guarda aberto/fechado para sobreviver ao próximo render (toggle não borbulha).
+  document.addEventListener("toggle", (ev) => { const k = ev.target.dataset && ev.target.dataset.toggle; if (k) S[k] = ev.target.open; }, true);
 
   // Deep-link para revisão: index.html?cenario=pendencias&tela=review&dialogo=confirm
   const qs = new URLSearchParams(location.search);
@@ -1044,5 +1103,12 @@
   if (dlg === "confirm") S.dialog = { type: "confirm", ackPartial: false, ackDest: false };
   if (dlg === "choose" || dlg === "missing") { const it = S.data.items.find((i) => i.state === (dlg === "choose" ? "chooseVersion" : "missing")); if (it) S.dialog = dlg === "choose" ? { type: "choose", pos: it.position, pick: null } : { type: "missing", pos: it.position, reread: null, tries: 0, search: null, editorOpened: false }; }
   if (qs.get("tema")) S.theme = qs.get("tema");
+  // ?antes=0|7|15: tamanho da playlist atual no destino (teste do diálogo de substituição)
+  if (qs.has("antes") && S.data.destination) {
+    const n = Math.max(0, Math.min(15, Number(qs.get("antes")) || 0));
+    S.data.destination = { ...S.data.destination, currentItems: D.PLAYLIST_LONG.slice(0, n) };
+  }
+  if (qs.get("expandir") === "1" && S.dialog) { S.dialog.allBefore = true; S.dialog.allAfter = true; }
   render();
+  if (qs.get("acao") === "vincular") A.linkBatch(); // estado de sucesso com Desfazer
 })();

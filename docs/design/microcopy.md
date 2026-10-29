@@ -83,21 +83,38 @@ Resultados do teste:
 - Seletor (só se houver mais de um setlist no dia): label **Setlist do dia** · "{n} setlists publicados para domingo"
 
 ### Cartão Destino
-- Título: **Destino no Holyrics**
-- Corpo: "{nome do culto selecionado}" + meta "{tipo: Culto / Evento / Temporário} · {data}" + "{n} músicas na playlist agora"
-- Ajuda fixa: "O app só consegue mudar o culto que está **selecionado** no Holyrics. Para trocar, selecione o culto lá e clique em Verificar de novo."
-- `[[Verificar de novo]]`
 
-| Estado do destino | Tom | Texto |
+Sem Holyrics Plan, o app só enxerga e edita a playlist **selecionada** no Holyrics. Ela chega de dois jeitos (`destination.kind`, ver view-models §3):
+
+| | **(a) Culto da agenda** (`kind: "schedule"`) | **(b) Playlist temporária** (`kind: "temporary"`) — caso mais comum nos testes reais |
+|---|---|---|
+| Nome grande | "{Culto de Domingo 01/11}" | **Playlist temporária** |
+| Meta | "Culto da agenda · {dom., 01/11, 10:00} · {7} músicas na playlist agora" | "Aparece como “Temporário” no Holyrics · {7} músicas na playlist agora" (**sem data**: o Holyrics devolve a hora atual, que não é data de culto) |
+| Checagem | Compara a data com a do setlist (tabela abaixo) | Chip neutro ⓘ **Sem data para conferir** + "É a playlist aberta no Holyrics agora. Ela não tem data de culto, então o app não consegue conferir se é a certa: você confirma antes de substituir." **Nunca** mostrar "Mesmo dia do setlist". |
+| Ajuda fixa | "O app só consegue mudar o que está **selecionado** no Holyrics. Para trocar, selecione o culto lá e clique em Verificar de novo." (só quando a data bate) | (a explicação da checagem já cobre) |
+| `[[Verificar de novo]]` | Relê o destino | Relê; se continuar temporária: "Continua selecionada a playlist temporária. Se o culto existe na agenda do Holyrics, selecione-o lá; senão, siga com a temporária e confirme antes de substituir." |
+| Reconhecimento no diálogo | Só se a data for diferente | **Sempre** ("Estou no culto certo") |
+
+| Estado do culto da agenda | Tom | Texto |
 |---|---|---|
 | Data bate | ok | ✓ Mesmo dia do setlist |
-| Temporário selecionado | warn | ⚠ **Está selecionada a playlist Temporário**, não um culto. Se o culto de domingo já existe no Holyrics, selecione-o lá. |
-| Data diferente | warn | ⚠ **O culto selecionado é de {25/10}, o setlist é de {01/11}.** Confira se é o culto certo. |
-| Playlist vazia | info | A playlist deste culto está vazia. |
-| Plan ausente (normal) | info (só em Ajustes/ajuda) | "Sem o Holyrics Plan, o Holyrics só deixa mudar o culto selecionado. Por isso você escolhe o culto lá, não aqui." |
+| Data diferente | warn | ⚠ **O culto selecionado é de {25/10}, o setlist é de {01/11}.** Confira se é o culto certo. Se não for, selecione o culto certo no Holyrics. |
+| Playlist vazia (qualquer tipo) | — | meta "playlist vazia agora" |
+| Plan ausente (normal) | info (só em Ajustes/ajuda) | "Sem o Holyrics Plan, o Holyrics só deixa mudar o que está selecionado. Por isso você escolhe o culto lá, não aqui." |
+
+Hint da barra de ação: agenda → "A playlist de “{Culto de Domingo 01/11}” será substituída. Você confirma antes."; temporária → "A playlist temporária do Holyrics será substituída. Você confirma antes."
 
 ### Resumo
 - "**{3} de {4} músicas prontas**" + chips por estado com contagem: `✓ 3 Prontas` `● 1 Confirmar vínculo`.
+
+### Resumo fixo e agrupamento
+- O bloco "Músicas do setlist" + "{2} de {7} músicas prontas" + chips fica **fixo no topo** da área de rolagem; a lista passa por baixo. A área de conteúdo tem respiro inferior para a última linha nunca ficar atrás do rodapé.
+- Chips no plural: `✓ 4 prontas` `● 1 para confirmar vínculo` `◆ 1 para escolher versão` `✕ 1 fora do Holyrics` `↻ 1 repetidas`.
+- Com **mais de 5 músicas e alguma pendência**, a lista agrupa por estado (padrão) com alternância `Por estado` / `Na ordem do setlist`:
+  - **PRECISAM DE VOCÊ ({3})** — primeiro, sempre aberto
+  - **REPETIDAS ({n})** — se houver
+  - **PRONTAS ({4})** — recolhido ("— mostrar" / "— recolher")
+- A posição original (número à esquerda) continua visível em todos os grupos.
 
 ### Linhas de música
 
@@ -106,6 +123,7 @@ Resultados do teste:
 | Pronta | ✓ **Pronta** (success) | "{artista}" | — |
 | Confirmar vínculo | ● **Confirmar vínculo** (info) | "Achamos “{título}” de {artista} no Holyrics com o mesmo nome." | `[[Revisar]]` |
 | Escolher versão | ◆ **Escolher versão** (warning) | "Há {2} músicas com este nome no Holyrics." | `[[Escolher]]` |
+| Parecida (aproximada) | ◆ **Conferir parecida** (warning) | "Achamos “{Aquieta Minh'alma}”: nome parecido, mas não igual." | `[[Conferir]]` |
 | Não está no Holyrics | ✕ **Não está no Holyrics** (danger) | "Precisa ser cadastrada no Holyrics antes." | `[[Como resolver]]` |
 | Repetida | ↻ **Repetida — entra 1 vez** (neutral) | "Já está na posição {1}. O Holyrics não aceita a mesma música duas vezes na playlist." | — |
 | Vínculo antigo (reconciliação) | ● **Confirmar vínculo** (info) | "A música vinculada não existe mais nesta biblioteca. Achamos uma igual." | `[[Revisar]]` |
@@ -129,14 +147,21 @@ Resultados do teste:
 
 - Eyebrow: `Culto de domingo` · H1: **Revisar músicas** · Apoio: "Confirme uma vez; nas próximas semanas estas músicas já entram sozinhas."
 
-### 3.1 Lote — "Mesmo nome e artista"
-- H2: **Encontramos {2} músicas com o mesmo nome e artista**
-- Apoio: "Confira se são as mesmas. Desmarque a que não for."
-- Linha (checkbox, marcada por padrão): **Videira:** É Ele — DROPS → **Holyrics:** E Ele — DROPS
-- Botão: `[Vincular {2} músicas]` → `Vinculando…` → ✓ "{2} músicas vinculadas." com `[[Desfazer]]` (6 s + permanente no histórico do item)
+### 3.1 Lote — "Mesmo nome e mesmo artista"
+- Entram **somente** candidatos exatos únicos (título + artista normalizados iguais e uma única opção no Holyrics). Ambíguos e aproximados **nunca** entram; vão para 3.2.
+- H2: **Mesmo nome e mesmo artista ({4})**
+- Apoio: "Só entram aqui músicas com uma única opção igual no Holyrics. Confira cada par e desmarque o que não for a mesma música."
+- Barra: "**{3} selecionados** de {4}" (anunciado ao mudar) · `Marcar todos` · `Desmarcar todos`
+- Linha (checkbox, **marcada por padrão**, desmarcável): **Videira:** É Ele — DROPS → **Holyrics:** E Ele — DROPS
+- Botão: `[Confirmar {3} vínculos]` / `[Confirmar 1 vínculo]` → `Confirmando…` → ✓ **"{3} vínculos confirmados."** "Nas próximas semanas estas músicas entram sozinhas." `[[Desfazer]]` (fica até a próxima ação; depois, desfazer pelo histórico do vínculo)
+- Ajuda ao lado do botão: "O vínculo fica salvo no Videira Music. Dá para desfazer."
 - 0 marcadas: botão desabilitado, "Marque ao menos uma música."
+- **Vazio** (sem exatos únicos, mas com decisões individuais): H2 **Nenhuma música para confirmar em lote** · "Só entram no lote músicas com nome e artista iguais e uma única opção no Holyrics. As músicas abaixo precisam de uma decisão por vez."
+- Seção individual: H2 **Decida uma por vez ({2})** · "Mais de uma opção com o mesmo nome, ou nome só parecido. Estas nunca entram no lote."
 
 ### 3.2 Escolher versão (T2a, diálogo)
+Variante **aproximada**: título **“{Aquieta Minh’alma}” é esta música?** · "No Holyrics achamos uma com nome parecido, mas não igual. Confira antes de vincular:" · uma opção + "Nenhuma destas" · botão `[Usar esta música]`. Com "Nenhuma destas" marcada, o botão vira `[Marcar como não encontrada]`.
+
 - Título: **Qual “{Santo}” é a do setlist?**
 - Apoio: "No Videira: **{Santo}** — {Ministério X}. No Holyrics há {2} com este nome:"
 - Opções (radio, **nenhuma marcada** por padrão): "{Santo} — {Ministério X} · cadastrada em {12/03/2025}" / "{Santo} — {Ministério X} (Ao vivo) · …" / "Nenhuma destas"
@@ -153,11 +178,14 @@ Resultados do teste:
 
 ## 4. Confirmar substituição (T3, diálogo)
 
-- Título: **Substituir a playlist de “{Culto de Domingo 01/11}”?**
-- Colunas: **Hoje no Holyrics ({7})** (lista, itens que saem riscados com rótulo "sai") × **Vai ficar ({3})** (lista numerada).
-- Linha de risco (warning): "As {7} músicas de hoje saem da playlist. Elas continuam na biblioteca do Holyrics; só saem deste culto. Guardamos uma cópia para voltar se der errado."
+- Título: agenda → **Substituir a playlist de “{Culto de Domingo 01/11}”?**; temporária → **Substituir a playlist temporária do Holyrics?**
+- Colunas: **Hoje no Holyrics ({7})** (itens que saem riscados com rótulo "sai") × **Vai ficar ({3})** (lista numerada).
+  - **Sem rolagem escondida.** Até 10 itens: todas as linhas aparecem. Acima de 10: as 8 primeiras + botão de largura total **"+ {7} músicas — mostrar todas"** (`aria-expanded`, `aria-controls`, alcançável por Tab) → "Mostrar menos". Vale para as duas colunas.
+  - **Playlist vazia (0):** a coluna mostra "Vazia — nenhuma música vai sair." (sem "sai") e o aviso de risco vira info: **A playlist está vazia agora** · "Nada vai sair. As {4} músicas do setlist entram nela."
+- Linha de risco (warning, com itens): "As {7} músicas de hoje saem da playlist. Elas continuam na biblioteca do Holyrics; só saem desta playlist. Guardamos uma cópia para voltar se der errado."
 - Se parcial: caixa **desmarcada** "Publicar mesmo sem: {Santo}" (lista). Sem marcar: botão desabilitado + "Marque para publicar sem essas músicas."
-- Se destino suspeito: caixa **desmarcada** "Confirmo que {Temporário} é o destino certo".
+- Se **temporária**: caixa **desmarcada** **Estou no culto certo** · "A playlist temporária não tem data, então o app não consegue conferir. Olhe no Holyrics se é a playlist que vai para o telão agora." Sem marcar: "Marque “Estou no culto certo” para continuar."
+- Se agenda com **data diferente**: caixa **desmarcada** "Confirmo que {Culto de Domingo 25/10} é o destino certo" · "A data do culto selecionado é diferente da data do setlist."
 - Se Videira offline: info "Sem internet: usando o setlist baixado {sábado 21:14}. O aviso ao Videira será enviado depois."
 - `[[Cancelar]]` `[Substituir playlist]` (`ds-button-danger` com ícone de aviso, regra 7 do DS: o botão que executa o dano usa `danger`; nunca um "OK" verde). Foco inicial em `Cancelar`.
 
