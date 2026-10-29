@@ -1,4 +1,8 @@
-﻿# Arquitetura aprovada
+# Arquitetura aprovada
+
+## Shell desktop
+
+Recomendação de stack: Electron + React/Vite + Node, mantendo o núcleo JavaScript existente no processo principal e expondo somente IPC tipado à UI. A análise comparativa, trade-offs de pacote e condição de reavaliação estão em [ADR 0005](adr/0005-shell-desktop.md). Instalador Windows por usuário, atualização e plano macOS estão em [ADR 0006](adr/0006-distribuicao-desktop.md). Processos e contrato UI-core estão em [ADR 0007](adr/0007-processos-ipc.md) e [contrato IPC](contracts/ui-core-ipc.md). Segurança, observabilidade e release estão em [ADR 0008](adr/0008-operacao-seguranca-release.md).
 
 ```text
                       ┌──────────────────────────────┐

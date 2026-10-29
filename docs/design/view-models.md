@@ -1,0 +1,303 @@
+# View-models: contrato de dados das telas
+
+> **Para:** aba de arquitetura, para validar o que o núcleo (`src/core`, `src/adapters`, `src/state`) deve expor à UI.
+> **Regra:** a UI não chama a API do Holyrics nem a do Videira; ela recebe estes objetos e envia **comandos** (seção 13). Textos de interface são derivados na UI a partir de códigos; o núcleo não devolve frases.
+> **Convenções:** datas ISO 8601 com fuso (`2026-11-01T10:00:00-03:00`); IDs Holyrics sempre `string`; campos ausentes = `null`, não omitidos; enums em `camelCase` minúsculo. O protótipo (`src/ui/prototype/data.js`) usa exatamente estas formas.
+
+## 0. Tipos compartilhados
+
+```jsonc
+// SongRef — uma música de um dos lados
+{ "title": "É Ele", "artist": "DROPS" }
+
+// HolyricsSong
+{ "id": "1792693855260", "title": "E Ele", "artist": "DROPS", "archived": false }
+
+// Connection
+{
+  "status": "ok" | "checking" | "unreachable" | "tokenInvalid" | "permissionMissing" | "offline" | "notConfigured",
+  "checkedAt": "2026-11-01T09:38:12-03:00",
+  "detail": { /* por serviço, ver AppShell */ }
+}
+
+// AppError — toda falha que a UI mostra
+{
+  "code": "HOLYRICS_UNREACHABLE",       // enum fechado, ver tabela abaixo
+  "severity": "error" | "warning" | "info",
+  "retryable": true,
+  "params": { "missing": ["GetCurrentSchedule"] },   // variáveis da mensagem
+  "technical": { "at": "…", "message": "ECONNREFUSED 127.0.0.1:8091", "holyricsVersion": "2.30.0" } // nunca contém token
+}
+```
+
+`AppError.code` (enum fechado): `HOLYRICS_UNREACHABLE`, `HOLYRICS_TOKEN_INVALID`, `HOLYRICS_PERMISSION_MISSING`, `HOLYRICS_TIMEOUT`, `VIDEIRA_OFFLINE`, `VIDEIRA_TOKEN_INVALID`, `VIDEIRA_NO_SETLIST`, `DESTINATION_SUSPECT`, `DESTINATION_CHANGED`, `SETLIST_CHANGED`, `PLAN_REQUIRED`, `LIBRARY_PARTIAL`, `LINK_SAVE_FAILED`, `APPLY_FAILED`, `VERIFY_MISMATCH`, `RESTORE_FAILED`, `STATE_CORRUPTED_REBUILT`.
+
+## 1. AppShell (sempre presente)
+
+```jsonc
+{
+  "configured": true,                       // false → T0
+  "connections": {
+    "holyrics": { "status": "ok", "checkedAt": "…", "detail": { "version": "2.30.0", "port": 8091, "songCount": 29, "plan": "none" } },
+    "videira":  { "status": "ok", "checkedAt": "…", "detail": { "organizationName": "Igreja Videira Centro" } }
+  },
+  "pendingReportsCount": 0,
+  "reconciliation": { "active": false, "affectsCurrentSetlist": false, "count": 0 },
+  "theme": "system" | "light" | "dark",
+  "fontScale": 1 | 1.15 | 1.3,
+  "appVersion": "0.1.0"
+}
+```
+
+## 2. Onboarding (T0)
+
+```jsonc
+{
+  "step": "welcome" | "holyrics" | "videira" | "done",
+  "holyrics": {
+    "port": 8091,
+    "tokenSaved": false,
+    "test": null | {
+      "result": "ok" | "unreachable" | "tokenInvalid" | "permissionMissing",
+      "version": "2.30.0",
+      "songCount": 29,
+      "requiredPermissions": ["GetVersion","GetTokenInfo","GetAPIServerInfo","GetHolyricsPlanInfo","SearchLyrics","GetSongs","GetLyrics","GetLyricsPlaylist","AddLyricsToPlaylist","RemoveFromLyricsPlaylist","GetCurrentSchedule"],
+      "missingPermissions": [],
+      "extraPermissions": ["ActionNext","ActionPrevious"],   // aviso, não bloqueia
+      "permissionRequestOpened": true,                        // CheckPermissions abriu popup no Holyrics
+      "lanExposed": true                                      // servidor escuta em 0.0.0.0 → mostrar aviso
+    }
+  },
+  "videira": {
+    "tokenSaved": false,
+    "test": null | { "result": "ok" | "tokenInvalid" | "offline", "organizationName": "Igreja Videira Centro", "nextSetlist": { "title": "Culto de domingo — manhã", "eventAt": "…" } }
+  },
+  "reminder": { "enabled": true, "weekday": 0, "time": "08:00" }
+}
+```
+
+O token **nunca volta** para a UI depois de salvo; só `tokenSaved` e `tokenHint` (últimos 4 caracteres) em Ajustes.
+
+## 3. Culto — Preparar culto (T1)
+
+```jsonc
+{
+  "phase": "loading" | "ready" | "error",
+  "loadingStep": null | "setlist" | "library" | "destination",
+  "preparedAt": "2026-11-01T09:38:20-03:00",
+  "setlistSource": "live" | "cache",
+  "setlistCachedAt": null | "2026-10-31T21:14:00-03:00",
+  "setlistChoices": [                         // >1 setlist no dia → seletor
+    { "id": "async-test-setlist-ordered", "title": "Culto de domingo — manhã", "eventAt": "2026-11-01T10:00:00-03:00" }
+  ],
+  "setlist": {
+    "id": "async-test-setlist-ordered",
+    "title": "Culto de domingo — manhã",
+    "eventAt": "2026-11-01T10:00:00-03:00",
+    "publishedBy": "Marta",                 // GAP: endpoint atual não expõe; opcional
+    "updatedAt": null                       // GAP: necessário para SETLIST_CHANGED
+  },
+  "destination": {                          // GetCurrentSchedule + GetLyricsPlaylist
+    "name": "Culto de Domingo 01/11",
+    "type": "service" | "event" | "temporary",
+    "datetime": "2026-11-01T10:00:00-03:00",
+    "eventId": "…" ,
+    "currentItems": [ { "id": "1792693855001", "title": "Bondade de Deus", "artist": "Isaias Saad" } ],
+    "check": "match" | "temporary" | "dateMismatch" | "unknown"
+  },
+  "items": [ /* ItemVM, abaixo */ ],
+  "summary": { "total": 3, "ready": 2, "needsLink": 1, "chooseVersion": 0, "missing": 0, "repeated": 0 },
+  "target": { "ids": ["1792693855267","1792693855255","1792693855260"], "alreadyApplied": false },
+  "primaryAction": "review" | "publish" | "recheck" | "none",
+  "blockers": [],                           // códigos que impedem publicar (ex.: HOLYRICS_UNREACHABLE)
+  "warnings": [],                           // AppError com severity warning
+  "error": null | AppError
+}
+```
+
+### ItemVM
+
+```jsonc
+{
+  "position": 2,
+  "songId": "fixture-videira-e-ele",
+  "song": { "title": "É Ele", "artist": "DROPS" },
+  "state": "ready" | "needsLink" | "chooseVersion" | "missing" | "repeated",
+  "holyrics": null | { "id": "1792693855260", "title": "E Ele", "artist": "DROPS" },
+  "matchedBy": null | "externalId" | "exactTitleArtist",
+  "suggestion": null | { "id": "1792693855260", "title": "E Ele", "artist": "DROPS", "reason": "exactTitleArtist" },
+  "candidates": [],                          // chooseVersion: HolyricsSong[] com título/artista (não só IDs)
+  "repeatOf": null | 0,                      // repeated: posição da 1ª ocorrência
+  "staleLink": null | { "oldId": "1611…", "reason": "notInLibrary" }   // vínculo existia mas ID sumiu
+}
+```
+
+**Mapeamento do núcleo atual (`planSync`) → `ItemVM.state`:**
+
+| `planSync.itemResults[].status` | Condição | `state` |
+|---|---|---|
+| `resolved` | — | `ready` |
+| `absent` | `suggestions.length === 1` | `needsLink` |
+| `absent` | sem `suggestions` | `missing` |
+| `ambiguous` | — | `chooseVersion` |
+| `repeated` | — | `repeated` |
+
+## 4. Revisar músicas (T2, T2a, T2b)
+
+```jsonc
+{
+  "batch": [                                  // somente exatos únicos
+    { "position": 2, "songId": "fixture-videira-e-ele", "videira": { "title": "É Ele", "artist": "DROPS" },
+      "holyrics": { "id": "1792693855260", "title": "E Ele", "artist": "DROPS" }, "selected": true }
+  ],
+  "individual": [                             // chooseVersion
+    { "position": 3, "songId": "…", "videira": { "title": "Santo", "artist": "Ministério X" },
+      "candidates": [ { "id": "…", "title": "Santo", "artist": "Ministério X", "createdAt": "2025-03-12" } ] }
+  ],
+  "missing": [
+    { "position": 4, "songId": "…", "videira": { "title": "…", "artist": "…" },
+      "importOptions": ["holyricsEditor", "txt", "openlp", "opensong"], "canOpenEditor": true }
+  ],
+  "lastLinkResult": null | { "linked": 2, "failed": 0, "undoToken": "link-batch-…" }
+}
+```
+
+`createdAt` do candidato: o ID Holyrics é epoch em ms, então a data pode ser derivada sem API extra.
+
+## 5. Confirmar substituição (T3)
+
+```jsonc
+{
+  "destination": { "name": "Culto de Domingo 01/11", "type": "service", "check": "match" },
+  "before": [ { "id": "…", "title": "…", "artist": "…" } ],          // 7 itens
+  "after":  [ { "position": 1, "id": "…", "title": "Mil Graus", "artist": "Renascer Praise" } ],
+  "removedCount": 7,
+  "leftOut": [ { "position": 4, "title": "Santo", "state": "missing" } ],
+  "repeatedCollapsed": [ { "title": "A Boa Parte", "positions": [1, 3] } ],
+  "requiresPartialAck": true,
+  "requiresDestinationAck": false,
+  "setlistSource": "live" | "cache",
+  "planFingerprint": "sha256:…"            // enviado de volta em apply() para detectar mudanças
+}
+```
+
+## 6. Publicando (T4) — eventos
+
+O núcleo emite eventos (stream/callback); a UI não faz polling.
+
+```jsonc
+{ "type": "step", "step": "backup" | "remove" | "add" | "verify" | "report", "status": "running" | "done" | "failed", "at": "…" }
+{ "type": "slow", "step": "verify", "elapsedMs": 10000 }
+{ "type": "finished", "result": ResultVM }
+```
+
+## 7. Resultado (T5)
+
+```jsonc
+{
+  "outcome": "verified" | "partial" | "failedRestored" | "failedNotRestored" | "unchanged",
+  "verifiedAt": "2026-11-01T09:41:03-03:00",
+  "destinationName": "Culto de Domingo 01/11",
+  "playlistNow": [ { "id": "…", "title": "…", "ok": true } ],      // releitura
+  "originalPlaylist": [ { "id": "…", "title": "…" } ],             // para copiar se não restaurou
+  "items": [ { "position": 0, "songId": "…", "title": "Mil Graus", "outcome": "added" | "duplicate" | "skipped" | "failed" | "unchanged" } ],
+  "report": { "status": "sent" | "queued" | "notSent", "queuedId": null },
+  "canRestore": true,                       // backup ainda em memória e playlist não mudou depois
+  "error": null | AppError
+}
+```
+
+## 8. Reconciliação (T6)
+
+```jsonc
+{
+  "detectedAt": "…",
+  "reason": "fingerprintChanged" | "manyIdsMissing",
+  "previousLibrary": { "baseDir": "C:\\Users\\midia\\Holyrics", "songCount": 29 },
+  "currentLibrary":  { "baseDir": "D:\\Holyrics",  "songCount": 31 },
+  "summary": { "unchanged": 12, "exactPair": 14, "multiple": 2, "noPair": 3 },
+  "batch": [ { "songId": "…", "videira": { "title": "Mil Graus", "artist": "Renascer Praise" },
+               "oldId": "1792693855267", "new": { "id": "1801000000004", "title": "Mil Graus", "artist": "Renascer Praise" },
+               "inCurrentSetlist": true, "selected": true } ],
+  "individual": [ { "songId": "…", "videira": { … }, "oldId": "…", "candidates": [ HolyricsSong ] } ],
+  "noPair": [ { "songId": "…", "videira": { … }, "oldId": "…" } ],
+  "affectsCurrentSetlist": true
+}
+```
+
+## 9. Histórico (T7)
+
+```jsonc
+{
+  "pendingReports": [ { "id": "q-1", "setlistTitle": "…", "createdAt": "…", "attempts": 3, "lastError": "VIDEIRA_OFFLINE" } ],
+  "runs": [ { "id": "…", "at": "…", "setlistTitle": "…", "destinationName": "…", "outcome": "verified", "songCount": 3, "reportStatus": "sent" } ],
+  "linkChanges": [ { "at": "…", "songTitle": "É Ele", "fromId": null, "toId": "1792693855260", "source": "batch" | "individual" | "reconciliation", "undoable": true } ]
+}
+```
+
+`runs` pode vir do Videira (`HolyricsSyncReport`) com fallback ao cache local; não exige SQLite.
+
+## 10. Ajustes (T8)
+
+```jsonc
+{
+  "holyrics": { "port": 8091, "tokenHint": "a1B9", "connection": Connection, "lanExposed": true },
+  "videira":  { "apiBase": "https://videiramusic.org", "tokenHint": "7Qx2", "organizationName": "…", "connection": Connection },
+  "reminder": { "enabled": true, "weekday": 0, "time": "08:00" },
+  "appearance": { "theme": "system", "fontScale": 1 },
+  "tray": { "startWithOs": true, "closeToTray": true },
+  "data": { "statePath": "%APPDATA%\\async-videira\\state.json", "lastRebuildAt": null }
+}
+```
+
+## 11. Bandeja (T9)
+
+```jsonc
+{
+  "icon": "normal" | "attention" | "error",
+  "tooltip": "async-videira — culto pronto para publicar",
+  "summary": { "setlistTitle": "Culto de domingo — manhã", "ready": 3, "total": 4 },
+  "holyricsStatus": "ok",
+  "pendingReportsCount": 0
+}
+```
+
+Notificação: `{ "kind": "reminderReady" | "reminderPending" | "setlistChanged" | "backgroundError", "params": { … } }`.
+
+## 12. O que o núcleo precisa expor além do que existe hoje (gaps)
+
+| # | Necessidade da UI | Situação atual | Proposta |
+|---|---|---|---|
+| G1 | Distinguir "Confirmar vínculo" de "Não está no Holyrics" | `planSync` devolve `status: "absent"` + `suggestions` | Manter, com o mapeamento da seção 3; ou acrescentar `status: "suggested"` |
+| G2 | Candidatos ambíguos com título/artista | `candidates` são só IDs no caminho `ambiguous` | Devolver `HolyricsSong[]` |
+| G3 | Vínculo velho (ID sumiu) | Comentário no código; não sinaliza | `staleLink: { oldId }` no item |
+| G4 | Destino selecionado e checagem | Não exposto | `getDestination()` via `GetCurrentSchedule` + `check` |
+| G5 | Progresso por etapa | `executeSync` é uma promessa só | Callback/evento `onStep` |
+| G6 | Restauração automática e "desfazer" | `executeSync` não restaura; backup não é retido | Restaurar + reler em falha; manter backup em memória e expor `restorePrevious()` com `canRestore` |
+| G7 | Códigos de erro estáveis | `error` é string | Enum `AppError.code` |
+| G8 | Plano revalidado na aplicação | CLI revalida | `apply({ planFingerprint })` → `DESTINATION_CHANGED` / `SETLIST_CHANGED` |
+| G9 | Outcome `unchanged` | Existe no núcleo, mas o ADR 0004 lista só added/duplicate/skipped/failed | Alinhar com o Videira |
+| G10 | Desfazer vínculo | Não existe endpoint | `unlink(songId)` mantendo histórico (depende do endpoint de vínculo em lote) |
+| G11 | `publishedBy` / `updatedAt` do setlist | Endpoint não expõe | Opcional para UX; `updatedAt` necessário para G8 |
+| G12 | Abrir editor do Holyrics para ausente | Rota `/api/popup-createsong` não documentada | `openHolyricsEditor({ title, artist })` com tratamento 409/429 |
+
+## 13. Comandos (UI → núcleo)
+
+| Comando | Entrada | Saída |
+|---|---|---|
+| `testHolyrics` | `{ port, token }` | `Onboarding.holyrics.test` |
+| `requestHolyricsPermissions` | — | `{ opened: boolean }` |
+| `testVideira` | `{ token }` | `Onboarding.videira.test` |
+| `saveToken` / `removeToken` | `{ service, token? }` | `{ ok, tokenHint }` |
+| `prepare` | `{ setlistId? }` | `PrepareVM` |
+| `refreshDestination` | — | `PrepareVM.destination` |
+| `rereadLibrary` | — | `PrepareVM` |
+| `confirmLinks` | `{ links: [{ songId, holyricsId }] }` | `{ linked, failed, undoToken }` |
+| `undoLinks` | `{ undoToken }` | `{ ok }` |
+| `openHolyricsEditor` | `{ title, artist }` | `{ ok } \| AppError` |
+| `getApplyPreview` | — | `ApplyConfirmVM` |
+| `apply` | `{ planFingerprint, allowPartial, destinationAck }` | eventos + `ResultVM` |
+| `restorePrevious` | — | `ResultVM` |
+| `getReconciliation` / `confirmRemaps` | `{ remaps: [{ songId, oldId, newId }] }` | `ReconciliationVM` |
+| `retryReports` | — | `{ sent, remaining }` |
+| `getHistory` / `getSettings` / `saveSettings` | … | VMs 9–10 |
