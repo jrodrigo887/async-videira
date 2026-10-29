@@ -87,7 +87,12 @@ export async function executeSync({ items, catalog, adapter }) {
 
   if (!plan.mutates) {
     const hasRepeated = plan.itemResults.some((item) => item.status === "repeated");
-    return { status: hasRepeated ? "PARTIAL" : "OK", applied: false, verified: true, plan, reportItems: reportItems(plan, "skipped") };
+    const outcomes = plan.itemResults.map((item) => ({
+      songId: item.songId,
+      position: item.position,
+      outcome: item.status === "resolved" ? "unchanged" : item.status === "repeated" ? "duplicate" : "skipped",
+    }));
+    return { status: hasRepeated ? "PARTIAL" : "OK", applied: false, verified: true, plan, reportItems: outcomes };
   }
 
   try {

@@ -4,9 +4,11 @@ import { resolve } from "node:path";
 import { executeSync, planSync } from "./core/sync-plan.mjs";
 import { createHolyricsClient } from "./adapters/holyrics-api/client.mjs";
 import { createVideiraClient } from "./adapters/videira/client.mjs";
-import { getDefaultStatePath, readState, sha256, writeState } from "./state/store.mjs";
+import { canonicalJson, getDefaultStatePath, readState, sha256, writeState } from "./state/store.mjs";
 
 const SYSTEM_SONG_ID = "1611686353330";
+const MAX_REPORT_ATTEMPTS = 10;
+const MAX_REPORT_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function makeClients(env, fetchImpl) {
   if (!env.VIDEIRA_TOKEN) throw new Error("VIDEIRA_TOKEN is required.");
@@ -120,8 +122,43 @@ function setlistContentHash(detail) {
   return sha256(projectSetlist(detail));
 }
 
+function reportForServer(report) {
+  return {
+    ...report,
+    libraryFingerprint: typeof report.libraryFingerprint === "string"
+      ? report.libraryFingerprint
+      : sha256(canonicalJson(report.libraryFingerprint)),
+  };
+}
+
+async function flushPendingReports(statePath, videira) {
+  const state = await readState(statePath);
+  const now = Date.now();
+  let changed = false;
+  const pendingReports = [];
+  for (const entry of state.pendingReports) {
+    const attempts = Number(entry.attemptCount ?? 0);
+    const queuedAt = Date.parse(entry.queuedAt ?? "");
+    const expired = Number.isFinite(queuedAt) && now - queuedAt > MAX_REPORT_AGE_MS;
+    if (attempts >= MAX_REPORT_ATTEMPTS || expired) {
+      pendingReports.push(entry);
+      continue;
+    }
+    try {
+      await videira.sendSyncReport(reportForServer(entry.report));
+      changed = true;
+    } catch {
+      pendingReports.push({ ...entry, attemptCount: attempts + 1, lastAttemptAt: new Date(now).toISOString() });
+      changed = true;
+    }
+  }
+  if (changed) await writeState(statePath, { ...state, pendingReports });
+  return { ...state, pendingReports };
+}
+
 async function prepare({ env, fetchImpl, statePath, stdout, date }) {
   const { videira, holyrics } = makeClients(env, fetchImpl);
+  const previous = await flushPendingReports(statePath, videira);
   const listed = await videira.listPublishedSetlists({ date: date || undefined });
   const chosen = selectSetlist(listed.setlists, env.SETLIST_ID);
   if (!chosen) throw new Error(env.SETLIST_ID ? "SETLIST_ID is not among the published setlists." : "No published setlist is available.");
@@ -147,7 +184,6 @@ async function prepare({ env, fetchImpl, statePath, stdout, date }) {
     schedule: scheduleKey,
     plan,
   };
-  const previous = await readState(statePath);
   await saveLocalState(statePath, {
     ...previous,
     cache: {
@@ -167,14 +203,14 @@ async function prepare({ env, fetchImpl, statePath, stdout, date }) {
 }
 
 async function applyPrepared({ env, fetchImpl, statePath, stdout }) {
-  const state = await readState(statePath);
+  const { videira, holyrics } = makeClients(env, fetchImpl);
+  const state = await flushPendingReports(statePath, videira);
   const prepared = state.prepared;
   if (!prepared) throw new Error("Nenhuma preparação válida encontrada; execute preparar primeiro.");
   if (env.SETLIST_ID && String(env.SETLIST_ID) !== String(prepared.setlistId)) {
     throw new Error("SETLIST_ID differs from the prepared setlist; execute preparar again.");
   }
 
-  const { videira, holyrics } = makeClients(env, fetchImpl);
   const listed = await videira.listPublishedSetlists();
   const chosen = selectSetlist(listed.setlists, prepared.setlistId);
   if (!chosen) throw new Error("The prepared setlist is no longer published; execute preparar again.");
@@ -204,9 +240,9 @@ async function applyPrepared({ env, fetchImpl, statePath, stdout }) {
   };
   let reportQueued = false;
   try {
-    await videira.sendSyncReport(report);
+    await videira.sendSyncReport(reportForServer(report));
   } catch {
-    state.pendingReports.push({ report, queuedAt: new Date().toISOString() });
+    state.pendingReports.push({ report, queuedAt: new Date().toISOString(), attemptCount: 1 });
     reportQueued = true;
   }
   await saveLocalState(statePath, {

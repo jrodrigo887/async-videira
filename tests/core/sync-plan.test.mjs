@@ -126,6 +126,6 @@ test("repeated execution is idempotent against the deduplicated playlist", async
   assert.equal(first.verified, true);
   assert.equal(second.applied, false);
   assert.equal(second.status, "PARTIAL");
-  assert.deepEqual(second.reportItems.map((item) => item.outcome), ["skipped", "skipped", "duplicate"]);
+  assert.deepEqual(second.reportItems.map((item) => item.outcome), ["unchanged", "unchanged", "duplicate"]);
   assert.equal(writes, 1);
 });

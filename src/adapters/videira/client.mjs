@@ -29,7 +29,7 @@ export function createVideiraClient({ baseUrl = "https://videiramusic.org", toke
     try {
       payload = await response.json();
     } catch {
-      if (response.ok) throw new VideiraApiError("Videira API returned invalid JSON.");
+      if (!response.ok) payload = null;
     }
     if (!response.ok) throw new VideiraApiError(`Videira API request failed (HTTP ${response.status}).`);
     return payload;

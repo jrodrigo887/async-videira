@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { runCli } from "../src/cli.mjs";
+import { readState } from "../src/state/store.mjs";
 
 const SONGS = [
   { id: "1792693855267", title: "Mil Graus", artist: "Renascer Praise" },
@@ -47,7 +48,7 @@ async function createHarness({ items = linkedItems, initialPlaylist = ["old-1", 
     addCalls: 0,
     schedule: { type: "temporary", name: "Temporário", datetime: "2026-11-01 10:00", datetime_millis: 1793527200000, lyrics_playlist: [], metadata: null },
   };
-  const videira = { reports: [], calls: [] };
+  const videira = { reports: [], calls: [], reportStatus: 201 };
   const holyricsServer = createServer(async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
     const action = url.pathname.split("/").at(-1);
@@ -100,8 +101,9 @@ async function createHarness({ items = linkedItems, initialPlaylist = ["old-1", 
     if (url.pathname === "/api/integrations/holyrics/sync-reports" && request.method === "POST") {
       let text = "";
       for await (const chunk of request) text += chunk;
-      videira.reports.push(JSON.parse(text));
-      return json(response, { ok: true });
+      const report = JSON.parse(text);
+      if (videira.reportStatus >= 200 && videira.reportStatus < 300) videira.reports.push(report);
+      return json(response, videira.reportStatus < 300 ? { ok: true } : { error: "INVALID_REQUEST" }, videira.reportStatus);
     }
     return json(response, { error: "not found" }, 404);
   });
@@ -154,7 +156,9 @@ test("preparar then aplicar publishes a verified order and sends a report", asyn
   assert.equal(h.videira.reports.length, 1);
   assert.equal(h.videira.reports[0].status, "OK");
   assert.deepEqual(h.videira.reports[0].items.map((item) => item.outcome), ["added", "added"]);
-  assert.ok(h.videira.reports[0].libraryFingerprint.idsHash);
+  assert.equal(typeof h.videira.reports[0].libraryFingerprint, "string");
+  assert.ok(h.videira.reports[0].libraryFingerprint.length <= 256);
+  assert.match(h.videira.reports[0].libraryFingerprint, /^[a-f0-9]{64}$/);
   assert.doesNotMatch(`${io.output()}${io.errors()}`, /fake-(?:holyrics|videira)-secret/);
 });
 
@@ -212,6 +216,34 @@ test("second prepare/apply is idempotent when playlist already matches deduplica
   assert.equal(h.holyrics.calls.filter((action) => action === "RemoveFromLyricsPlaylist").length, firstRemoveCount);
   assert.equal(h.holyrics.calls.filter((action) => action === "AddLyricsToPlaylist").length, firstAddCount);
   assert.equal(h.videira.reports.length, 2);
+  assert.deepEqual(h.videira.reports[1].items.map((item) => item.outcome), ["unchanged"]);
+});
+
+test("pending sync reports survive HTTP 400 and are removed after a successful retry", async (t) => {
+  const h = await createHarness({ items: [linkedItems[0]] });
+  t.after(h.cleanup);
+  const io = capture();
+  h.videira.reportStatus = 400;
+  assert.equal(await runCli(["preparar"], { env: h.env, ...io }), 0);
+  assert.equal(await runCli(["aplicar", "--yes"], { env: h.env, ...io }), 0);
+  let state = await readState(h.statePath);
+  assert.equal(state.pendingReports.length, 1);
+  assert.equal(state.pendingReports[0].attemptCount, 1);
+  assert.equal(typeof state.pendingReports[0].report.libraryFingerprint, "object");
+
+  // Preparing starts by retrying the queued report; a rejected request remains queued.
+  assert.equal(await runCli(["preparar"], { env: h.env, ...io }), 0);
+  state = await readState(h.statePath);
+  assert.equal(state.pendingReports.length, 1);
+  assert.equal(state.pendingReports[0].attemptCount, 2);
+
+  h.videira.reportStatus = 201;
+  assert.equal(await runCli(["preparar"], { env: h.env, ...io }), 0);
+  state = await readState(h.statePath);
+  assert.equal(state.pendingReports.length, 0);
+  assert.equal(h.videira.reports.length, 1);
+  assert.equal(typeof h.videira.reports[0].libraryFingerprint, "string");
+  assert.ok(h.videira.reports[0].libraryFingerprint.length <= 256);
 });
 
 test("aplicar refuses to run without --yes and without a completed preparar", async (t) => {
