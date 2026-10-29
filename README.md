@@ -31,3 +31,16 @@ A ação principal é **Preparar culto**; o operador pode iniciá-la manualmente
 - `src/ui/`: UI desktop.
 - `tests/core/`: testes unitários; `fixtures/`: casos sintéticos baseados nos discoveries.
 - `docs/`: arquitetura, ADRs e itens ainda não validados.
+
+## CLI de ponta a ponta
+
+Node.js 18+ com `fetch` nativo; sem dependências adicionais. Configure `VIDEIRA_TOKEN`, `HOLYRICS_TOKEN`; opcionalmente `VIDEIRA_API_BASE` (padrão `https://videiramusic.org`), `HOLYRICS_URL` (padrão `http://127.0.0.1:8091`) e `SETLIST_ID`.
+
+```sh
+node src/cli.mjs preparar
+node src/cli.mjs aplicar --yes
+```
+
+`preparar` mostra o dry-run e grava o plano local para a etapa seguinte, sem escrita nas APIs. `aplicar` exige essa preparação e `--yes`, revalida setlist/catálogo/destino, aplica e verifica a playlist e só então envia o relatório. Tokens são lidos do ambiente, nunca persistidos nem impressos. Estado fica em JSON no diretório de dados do usuário; testes definem `ASYNC_VIDEIRA_STATE_PATH` para usar arquivos temporários.
+
+Testes: `node --test tests/**/*.test.mjs`.

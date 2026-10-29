@@ -41,3 +41,4 @@ Thumbs.db
 
 # Credenciais locais de teste (nunca versionar)
 discovery/videira-local-env.md
+fixtures/holyrics-import-zz-teste/

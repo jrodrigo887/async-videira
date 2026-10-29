@@ -1,3 +1,3 @@
 ﻿# Testes
 
-Os testes unitários puros do sync-core usam `node:test`, fixtures JSON sintéticas e não exigem dependências externas. Execute com `node --test tests/core/sync-plan.test.mjs`.
+Os testes usam `node:test`, `node:http` com servidores locais falsos e fixtures JSON; não fazem chamadas à instalação Holyrics nem exigem dependências externas. Execute a suíte inteira com `node --test tests/**/*.test.mjs`.

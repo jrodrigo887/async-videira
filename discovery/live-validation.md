@@ -31,3 +31,11 @@ Com SongExternalLink criados no Postgres descartavel (Mil Graus 1792693855267, A
 - async-test-setlist-repeat (A, E, A): bridge diz "3 musicas" e reporta OK/added para os 3 itens, mas a playlist fica com 2 (A, E). Segunda execucao: reaplica de novo (limpa e adiciona) e reporta OK de novo, porque targetIds [A,E,A] != playlist [A,E]. Ou seja: relatorio FALSO-POSITIVO (nao ha releitura) + reaplicacao a cada ciclo no modo --watch (fingerprint so evita se !mutate). Confirmado.
 - Restauracao da playlist original foi feita com os mesmos comandos do app (Remove por indices + Add ids).
 Requisitos para o async-videira: releitura apos aplicar e comparacao com a lista deduplicada esperada; relatorio por item (added / duplicate / skipped); nunca reportar OK sem releitura.
+
+## Limite de 50 do SearchLyrics (CONFIRMADO ao vivo, 2026-10-29)
+Biblioteca com 59 musicas (29 reais + 30 "ZZ TESTE", importadas por TXT):
+- GetSongs {fields}: 59 (com e sem include_archived).
+- SearchLyrics {text:""}: 50 (CORTA). Apenas 21 das 30 "ZZ TESTE" apareceram.
+- SearchLyrics {text:"ZZ TESTE"}: 30 (filtro especifico abaixo de 50 nao corta).
+- Consequencia: bridge.mjs --catalog (SearchLyrics text:"") sobe catalogo truncado em bibliotecas >50 e o 1o lote SUBSTITUI o snapshot no Videira. O app novo deve usar GetSongs.
+- Playlist Temporario permaneceu com 7 itens durante o teste.
