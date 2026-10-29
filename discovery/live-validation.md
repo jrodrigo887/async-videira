@@ -39,3 +39,10 @@ Biblioteca com 59 musicas (29 reais + 30 "ZZ TESTE", importadas por TXT):
 - SearchLyrics {text:"ZZ TESTE"}: 30 (filtro especifico abaixo de 50 nao corta).
 - Consequencia: bridge.mjs --catalog (SearchLyrics text:"") sobe catalogo truncado em bibliotecas >50 e o 1o lote SUBSTITUI o snapshot no Videira. O app novo deve usar GetSongs.
 - Playlist Temporario permaneceu com 7 itens durante o teste.
+
+## popup-createsong (testado ao vivo em 2026-10-29, Holyrics 2.30.0, sem Plan)
+- POST /api/popup-createsong {title, artist, lyrics} sem token -> HTTP 200 {"status":"ok"}; abre o editor "Nova musica" preenchido. NADA e gravado ate o operador salvar (biblioteca seguiu com 29 musicas).
+- Sem 'lyrics' nem 'paragraphs' -> HTTP 400 {"status":"error","error":"required field: \"lyrics or paragraphs\""}. Titulo sozinho NAO basta.
+- NAO testado: 409 com editor ja aberto; confirmacao visual do preenchimento (pendente do usuario); intervalo minimo de 2 s entre chamadas.
+- A resposta nao devolve id: apos o operador salvar, descobrir o id relendo GetSongs e comparando com o catalogo anterior (novo id) ou por titulo+artista exatos.
+- CONFIRMADO pelo usuario (2026-10-29): o editor "Nova musica" abriu com titulo, artista e letra preenchidos.
