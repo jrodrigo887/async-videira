@@ -19,6 +19,8 @@ Thumbs.db
 *.p12
 *.pfx
 *credential*
+# Código do app (sem segredo) que a regra acima pegaria pelo nome
+!src/application/use-cases/credentials.ts
 *secret*
 
 # Bancos e backups locais: nunca versionar bancos reais ou cópias de usuário
