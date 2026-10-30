@@ -12,6 +12,8 @@ const outcomeText: Record<string, string> = {
   rejected: "a música não estava entre as oferecidas",
   failed: "falhou",
 };
+const missingEndpoint = "O servidor do Videira Music ainda não tem este recurso (atualização pendente no servidor). Peça a quem administra o servidor para publicar a versão nova.";
+
 const editorErrors: Record<string, string> = {
   EDITOR_ALREADY_OPEN: "O editor do Holyrics já está aberto. Feche-o e tente de novo.",
   EDITOR_UNSUPPORTED: "Esta versão do Holyrics não abre o editor pela API. Cadastre a música manualmente.",
@@ -62,7 +64,7 @@ export function Vinculos({ prep, onGo, onHelp, onConfirm, onRemove, onOpenEditor
   const confirm = () => run(async () => {
     const r = await onConfirm(chosen.map(([videiraSongId, holyricsSongId]) => ({ videiraSongId, holyricsSongId })));
     if (!r.ok) {
-      setFlash({ tone: "danger", icon: "x", title: "Não foi possível confirmar os vínculos", body: r.code === "AUTH_REJECTED" ? "O Videira Music recusou o token." : r.code === "PREPARATION_EXPIRED" ? "A preparação expirou. Prepare o culto de novo." : "Confira a conexão e tente de novo." });
+      setFlash({ tone: "danger", icon: "x", title: "Não foi possível confirmar os vínculos", body: r.code === "AUTH_REJECTED" ? "O Videira Music recusou o token." : r.code === "PREPARATION_EXPIRED" ? "A preparação expirou. Prepare o culto de novo." : r.code === "VIDEIRA_ENDPOINT_MISSING" ? missingEndpoint : "Confira a conexão e tente de novo." });
       return;
     }
     const good = r.outcomes.filter((o) => GOOD.includes(o.outcome)).length;
@@ -80,7 +82,7 @@ export function Vinculos({ prep, onGo, onHelp, onConfirm, onRemove, onOpenEditor
     const r = await onRemove(idOf(item));
     setFlash(r.ok
       ? { tone: "ok", icon: "check", title: "Vínculo desfeito", body: `“${item.title}” volta a ser procurada pelo nome no Holyrics. O culto foi preparado de novo.` }
-      : { tone: "danger", icon: "x", title: "Não foi possível desfazer o vínculo", body: r.code === "AUTH_REJECTED" ? "O Videira Music recusou o token." : r.code === "PREPARATION_EXPIRED" ? "A preparação expirou. Prepare o culto de novo." : "Confira a conexão e tente de novo." });
+      : { tone: "danger", icon: "x", title: "Não foi possível desfazer o vínculo", body: r.code === "AUTH_REJECTED" ? "O Videira Music recusou o token." : r.code === "PREPARATION_EXPIRED" ? "A preparação expirou. Prepare o culto de novo." : r.code === "VIDEIRA_ENDPOINT_MISSING" ? missingEndpoint : "Confira a conexão e tente de novo." });
   });
 
   const staleNote = (item: PlanItemView) => (item.staleExternalId ? <><br /><span className="sm" style={{ color: "hsl(var(--color-warning))" }}>O vínculo antigo (Holyrics {item.staleExternalId}) não existe mais nesta biblioteca.</span></> : null);

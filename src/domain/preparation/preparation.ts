@@ -10,6 +10,14 @@ export function scheduleIdentity(schedule: HolyricsSchedule | null | undefined):
   };
 }
 
+/**
+ * O que identifica o destino para fins de "mudou?". Numa playlist temporária o Holyrics devolve o minuto atual em
+ * `datetime`, então ele muda sozinho a cada minuto e não diz nada sobre o destino ter sido trocado: o horário não conta.
+ */
+function scheduleKey(identity: ScheduleIdentity): Partial<ScheduleIdentity> {
+  return identity.type === "temporary" ? { type: identity.type, name: identity.name } : identity;
+}
+
 /** `hash` é injetado (o domínio não importa node:crypto). */
 export function createPreparation({ chosenId, setlist, catalog, fingerprint, schedule, plan, preparedAt, hash }: {
   chosenId: string | number;
@@ -43,6 +51,6 @@ export function isStale(
     hash(current.setlist) !== prepared.setlistHash ||
     hash(current.catalog) !== prepared.catalogHash ||
     hash(current.fingerprint) !== hash(prepared.libraryFingerprint) ||
-    hash(scheduleIdentity(current.schedule)) !== hash(prepared.schedule)
+    hash(scheduleKey(scheduleIdentity(current.schedule))) !== hash(scheduleKey(prepared.schedule))
   );
 }

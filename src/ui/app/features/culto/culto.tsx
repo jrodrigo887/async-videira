@@ -78,7 +78,8 @@ function Songs({ items, onGo }: { items: PlanItemView[]; onGo: OnGo }) {
 
 function Destination({ prep, onRecheck, loading, onHelp }: { prep: PreparationView; onRecheck: () => void; loading: boolean; onHelp: OnHelp }) {
   const dest = prep.destination;
-  const hasDate = Boolean(dest.datetime);
+  // A playlist temporária também traz `datetime`, mas é só o relógio do Holyrics: não é data de culto.
+  const hasDate = dest.type !== "temporary" && Boolean(dest.datetime);
   const sameDay = Boolean(dest.datetime && prep.setlist.eventAt && new Date(dest.datetime).toDateString() === new Date(prep.setlist.eventAt).toDateString());
   const count = dest.currentCount ? `${plural(dest.currentCount, "música", "músicas")} na playlist agora` : "playlist vazia agora";
   const typeLabel = dest.type === "event" ? "Evento da agenda" : hasDate ? "Culto da agenda" : "Playlist temporária";

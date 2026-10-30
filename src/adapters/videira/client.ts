@@ -13,7 +13,8 @@ export class VideiraApiError extends Error {
     this.name = "VideiraApiError";
     this.status = status;
     this.apiCode = code;
-    this.code = unreachable ? "SERVICE_UNAVAILABLE" : status === 401 ? "AUTH_REJECTED" : status !== undefined && status >= 500 ? "SERVICE_UNAVAILABLE" : undefined;
+    // 404 sem código no corpo: a rota não existe neste servidor (versão antiga), diferente de "setlist/vínculo não encontrado".
+    this.code = unreachable ? "SERVICE_UNAVAILABLE" : status === 401 ? "AUTH_REJECTED" : status !== undefined && status >= 500 ? "SERVICE_UNAVAILABLE" : status === 404 && !code ? "VIDEIRA_ENDPOINT_MISSING" : undefined;
   }
 }
 

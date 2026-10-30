@@ -15,6 +15,7 @@ export const ERRORS = Object.freeze({
   AUTH_REQUIRED: { messageKey: "credentials.required" },
   AUTH_REJECTED: { messageKey: "credentials.rejected", helpTopic: "configurar-holyrics" },
   SERVICE_UNAVAILABLE: { messageKey: "service.unavailable", retryable: true },
+  VIDEIRA_ENDPOINT_MISSING: {},
   TIMEOUT: {},
   INTERNAL: {},
   INVALID_REQUEST: {},

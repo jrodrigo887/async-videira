@@ -43,7 +43,8 @@ test("adaptadores classificam o erro na borda: 401 → AUTH_REJECTED, 5xx/sem re
   assert.equal(new VideiraApiError("x", { status: 401 }).code, "AUTH_REJECTED");
   assert.equal(new VideiraApiError("x", { status: 503 }).code, "SERVICE_UNAVAILABLE");
   assert.equal(new VideiraApiError("x", { unreachable: true }).code, "SERVICE_UNAVAILABLE");
-  assert.equal(new VideiraApiError("x", { status: 404 }).code, undefined);
+  assert.equal(new VideiraApiError("x", { status: 404 }).code, "VIDEIRA_ENDPOINT_MISSING");
+  assert.equal(new VideiraApiError("x", { status: 404, code: "LINK_NOT_FOUND" }).code, undefined);
   assert.equal(new HolyricsApiError("x", { code: "AUTH_REJECTED" }).code, "AUTH_REJECTED");
 });
 
