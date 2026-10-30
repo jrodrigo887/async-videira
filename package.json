@@ -1,6 +1,6 @@
 {
   "name": "async-videira",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Prepare e publique setlists do Videira Music no Holyrics",
   "author": "Videira",
   "private": true,
