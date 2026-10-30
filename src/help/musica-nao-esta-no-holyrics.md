@@ -12,9 +12,9 @@ O app **não cria** músicas no Holyrics, porque isso exige o Holyrics Plan. Voc
 
 ## 1. Abrir o editor do Holyrics já preenchido
 
-1. No app, clique em **Abrir no Holyrics**. Abre no Holyrics a janela "Nova música" com o título e o artista.
-2. **Cole a letra.**
-3. **Apague o texto `[Letra não fornecida]`.** Ele entra no lugar da letra quando o app não tem a letra.
+1. No app, clique em **Abrir no Holyrics**. Abre no Holyrics a janela "Nova música" com o título, o artista e a **letra completa buscada no Videira**.
+2. **Confira a letra** e ajuste o que for preciso. O app só busca a letra neste momento, para facilitar o cadastro.
+3. Se o app avisar que não achou a letra no Videira, **cole a letra** e **apague o texto `[Letra não fornecida]`**. Ele entra no lugar da letra quando o app não tem a letra.
 4. Clique em **Salvar** no Holyrics.
 5. Volte ao app e clique em **Ler a biblioteca de novo**.
 6. Confira a música encontrada e clique em **Confirmar vínculo**.

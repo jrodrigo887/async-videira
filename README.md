@@ -32,18 +32,36 @@ A ação principal é **Preparar culto**; o operador pode iniciá-la manualmente
 - `tests/core/`: testes unitários; `fixtures/`: casos sintéticos baseados nos discoveries.
 - `docs/`: arquitetura, ADRs e itens ainda não validados.
 
+## Aplicativo desktop (primeiro marco)
+
+Requer Node.js 22.18+ (o projeto é TypeScript e o Node executa `.ts` direto) e npm. O shell Electron/React está em construção; instale dependências e execute `npm run dev` para servir a UI. `npm run build` gera UI e diretório Electron descompactado; `npm run dist:win` gera instalador NSIS por usuário em `dist/`. O instalador não exige admin e preserva `%APPDATA%\\async-videira` ao desinstalar. O primeiro build é sem assinatura: o Windows SmartScreen pode avisar que o editor é desconhecido; obtenha o instalador somente do canal oficial e confira a origem. Assinatura futura usa `CSC_LINK` e `CSC_KEY_PASSWORD` no ambiente de release, sem certificado incluído.
+
+Tokens digitados no app são criptografados por `safeStorage` do Electron e mantidos fora de `settings.json`; no Windows o backend usa DPAPI. Logs locais ficam em `%LOCALAPPDATA%\\async-videira\\logs`, com rotação; a aba Logs mostra eventos redigidos e só copia o conteúdo após ação explícita. macOS está apenas configurado como alvo DMG e não foi testado. A tela inicial oferece publicação e Ajuda empacotada; a configuração testa conexões individualmente. O smoke abre o app empacotado e chama `worship.prepare` contra servidores falsos locais, sem gravar no Holyrics. Device Guard pode bloquear executáveis de teste sem assinatura.
+
+```powershell
+npm install
+npm run dev
+npm run build
+npm run dist:win
+npm run smoke
+```
+
+`npm run dev` compila o processo principal para `out/`, abre o renderer Vite e o shell Electron. A UI chama os mesmos casos de uso da CLI pela ponte IPC (`src/interface/electron/ipc/commands.ts`).
+
+Todo o código é TypeScript (`strict`). `npm run typecheck` roda o `tsc --noEmit`; `npm test` roda a suíte direto sobre os `.ts`; `npm run check` faz os dois. `npm run build:main` emite o JavaScript do Electron e da CLI em `out/` (é o que o empacotamento usa).
+
 ## CLI de ponta a ponta
 
-Node.js 18+ com `fetch` nativo; sem dependências adicionais. Configure `VIDEIRA_TOKEN`, `HOLYRICS_TOKEN`; opcionalmente `VIDEIRA_API_BASE` (padrão `https://videiramusic.org`), `HOLYRICS_URL` (padrão `http://127.0.0.1:8091`) e `SETLIST_ID`.
+Node.js 22.18+ (executa `.ts` sem etapa de build) com `fetch` nativo; sem dependências adicionais. Configure `VIDEIRA_TOKEN`, `HOLYRICS_TOKEN`; opcionalmente `VIDEIRA_API_BASE` (padrão `https://videiramusic.org`), `HOLYRICS_URL` (padrão `http://127.0.0.1:8091`) e `SETLIST_ID`.
 
 ```sh
-node src/cli.mjs preparar
-node src/cli.mjs aplicar --yes
+node src/cli.ts preparar
+node src/cli.ts aplicar --yes
 ```
 
 `preparar` mostra o dry-run e grava o plano local para a etapa seguinte, sem escrita nas APIs. `aplicar` exige essa preparação e `--yes`, revalida setlist/catálogo/destino, aplica e verifica a playlist e só então envia o relatório. Tokens são lidos do ambiente, nunca persistidos nem impressos. Estado fica em JSON no diretório de dados do usuário; testes definem `ASYNC_VIDEIRA_STATE_PATH` para usar arquivos temporários.
 
-Testes: `node --test tests/**/*.test.mjs`.
+Testes: `npm test` (ou `npm run check` para tipos + testes).
 
 ## Tutorial
 

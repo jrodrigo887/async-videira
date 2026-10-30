@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Videira - icone do app</title>
+  <rect width="1024" height="1024" rx="230" fill="#3D7A4A"/>
+  <g transform="translate(162.75 138) scale(11)">
+    <circle cx="12" cy="14" r="8.5" fill="#FFFFFF"/>
+    <circle cx="32" cy="14" r="8.5" fill="#FFFFFF"/>
+    <path d="M43 22 C43 10 48 6 60 6 C60 18 56 22 43 22 Z" fill="#8FD19E"/>
+    <circle cx="22" cy="34" r="8.5" fill="#FFFFFF"/>
+    <circle cx="42" cy="34" r="8.5" fill="#FFFFFF"/>
+    <circle cx="32" cy="54" r="8.5" fill="#D3B3D5"/>
+  </g>
+</svg>

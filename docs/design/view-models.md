@@ -2,7 +2,7 @@
 
 > **Para:** aba de arquitetura, para validar o que o núcleo (`src/core`, `src/adapters`, `src/state`) deve expor à UI.
 > **Regra:** a UI não chama a API do Holyrics nem a do Videira; ela recebe estes objetos e envia **comandos** (seção 13). Textos de interface são derivados na UI a partir de códigos; o núcleo não devolve frases.
-> **Convenções:** datas ISO 8601 com fuso (`2026-11-01T10:00:00-03:00`); IDs Holyrics sempre `string`; campos ausentes = `null`, não omitidos; enums em `camelCase` minúsculo. O protótipo (`src/ui/prototype/data.js`) usa exatamente estas formas.
+> **Convenções:** datas ISO 8601 com fuso (`2026-11-01T10:00:00-03:00`); IDs Holyrics sempre `string`; campos ausentes = `null`, não omitidos; enums em `camelCase` minúsculo. O protótipo (`docs/design/prototype/data.js`) usa exatamente estas formas.
 
 ## 0. Tipos compartilhados
 

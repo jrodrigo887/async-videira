@@ -5,7 +5,7 @@ Este guia leva uma igreja do zero até a playlist de letras do Holyrics montada 
 - **Para quem:** o técnico voluntário que configura uma vez e o operador de mídia que usa todo domingo.
 - **Tempo:** cerca de 20 a 30 minutos na primeira vez; uns 2 minutos por domingo depois.
 - **Premissas validadas:** Windows, Holyrics 2.30.0, **sem Holyrics Plan**, um único computador com Holyrics.
-- **Estado do produto hoje:** o núcleo funciona por linha de comando (`node src/cli.mjs`). O aplicativo instalável (`.exe`) e a interface gráfica ainda estão em construção; a parte 7 mostra como será. Onde algo ainda não foi testado, está marcado com **(não testado)**.
+- **Estado do produto hoje:** o núcleo funciona por linha de comando (`node src/cli.ts`). O aplicativo instalável (`.exe`) e a interface gráfica ainda estão em construção; a parte 7 mostra como será. Onde algo ainda não foi testado, está marcado com **(não testado)**.
 
 > **Regra de ouro:** o app nunca escreve no banco de dados do Holyrics. Ele só conversa com a API local do Holyrics e só altera a **playlist de letras selecionada** na tela. As músicas continuam na biblioteca.
 
@@ -35,7 +35,7 @@ O que cada parte guarda:
 - [ ] Holyrics **2.26.0 ou superior** instalado e abrindo normalmente (testado na 2.30.0).
 - [ ] Alguém com perfil de **administrador da igreja** no Videira Music.
 - [ ] O setlist do culto **publicado** no Videira, com **data e hora** preenchidas. Só aparecem setlists publicados, não excluídos e com data.
-- [ ] Node.js 18 ou superior no computador do Holyrics, para o modo de linha de comando (`node --version`).
+- [ ] Node.js 22.18 ou superior no computador do Holyrics, para o modo de linha de comando (`node --version`).
 - [ ] A pasta do projeto `async-videira` no computador.
 - [ ] Nenhum culto em andamento. Os testes alteram a playlist selecionada.
 
@@ -140,7 +140,7 @@ O estado local fica em `%APPDATA%\async-videira\state.json`. Para usar outro cam
 ### 5.2 Passo 1: preparar (não altera nada)
 
 ```powershell
-node src/cli.mjs preparar
+node src/cli.ts preparar
 ```
 
 Saída esperada:
@@ -170,7 +170,7 @@ Confira também a linha **Destino selecionado**. Se não for o culto ou a playli
 Com tudo resolvido e o destino correto:
 
 ```powershell
-node src/cli.mjs aplicar --yes
+node src/cli.ts aplicar --yes
 ```
 
 O que o app faz, nesta ordem:
@@ -222,24 +222,33 @@ O Holyrics ignora, sem avisar, a segunda ocorrência da mesma música na playlis
 
 ---
 
-## 7. Instalação do aplicativo (em construção)
+## 7. Instalação do aplicativo
 
-O instalador **ainda não existe**. A decisão técnica é `Electron + React`, com instalador por usuário para Windows, sem precisar de administrador. Quando estiver pronto, o fluxo será:
+O projeto configura um instalador de teste NSIS por usuário, sem pedir administrador. Para executar ou criar o pacote a partir do código, use Node.js 22.18+:
 
-1. Baixar o instalador do canal oficial e instalar.
-2. Na primeira execução, um assistente em 3 passos: **Holyrics** (porta e token), **Videira Music** (token) e **Pronto**.
-3. Tela **Culto** com as músicas do setlist, o destino e um botão **Publicar no Holyrics**, com confirmação do que sai e do que entra.
-4. Os tokens ficam no cofre do Windows (Credential Manager), não em arquivo.
+```powershell
+npm install
+npm run dev
+npm run build
+npm run dist:win
+npm run smoke
+```
+
+O instalador será gerado em `dist/`. Builds de teste ainda não têm assinatura; o Windows SmartScreen pode avisar que o editor é desconhecido. Confira que o instalador veio do canal oficial e mantenha as verificações do Windows ativas. A desinstalação preserva `%APPDATA%\\async-videira` por padrão.
+
+`npm run smoke` abre o app empacotado e prepara um setlist sintético contra APIs falsas em loopback; não chama nem altera o Holyrics real. Políticas de Device Guard podem bloquear binários de teste sem assinatura.
+
+Na primeira execução, configure os endereços e tokens em **Configuração** e teste as conexões. Tokens usam `safeStorage` do sistema e não ficam no JSON de preferências. Esta versão inicial ainda não tem o assistente completo, revisão de vínculos ou confirmação visual do destino antes da aplicação; confira a playlist selecionada no Holyrics. A Ajuda offline abre pelo menu lateral.
 
 O protótipo das telas pode ser visto localmente:
 
 ```powershell
-node scripts/serve-prototype.mjs
+node docs/design/prototype/serve.ts
 ```
 
 e aberto em `http://localhost:5177/` (cenários: `?cenario=pronto`, `pendencias`, `temporaria`, `lote`, `primeira`, `reconciliacao`).
 
-Suporte a macOS: previsto, ainda **não testado**. O comportamento da API do Holyrics não tem diferença de código entre os sistemas, mas o caminho dos arquivos e o firewall do Mac precisam ser validados num computador real.
+Suporte a macOS: DMG previsto na configuração, ainda **não testado**. O comportamento da API do Holyrics não tem diferença de código entre os sistemas, mas o caminho dos arquivos e o firewall do Mac precisam ser validados num computador real.
 
 ---
 
@@ -309,5 +318,5 @@ Se encontrar um comportamento diferente do descrito aqui, registre em `docs/open
 
 - Decisões de arquitetura: `docs/adr/` e `docs/architecture.md`.
 - Contrato entre a interface e o núcleo: `docs/contracts/ui-core-ipc.md`.
-- UX e protótipo: `docs/design/` e `src/ui/prototype/`.
+- UX e protótipo: `docs/design/` e `docs/design/prototype/` (arquivado).
 - Relatórios de investigação e validações ao vivo: `discovery/` (`holyrics-api-map.md`, `live-validation.md`).

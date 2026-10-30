@@ -1,7 +1,7 @@
 # UX brief — async-videira (desktop)
 
 > **Status:** proposta de design para validação com a aba de arquitetura e com um operador real.
-> **Entregáveis vizinhos:** [microcopy e estados](microcopy.md), [acessibilidade, tema e janela](accessibility.md), [contrato de dados das telas](view-models.md), [protótipo navegável](../../src/ui/prototype/index.html).
+> **Entregáveis vizinhos:** [microcopy e estados](microcopy.md), [acessibilidade, tema e janela](accessibility.md), [contrato de dados das telas](view-models.md), [protótipo navegável](prototype/index.html).
 > **Base visual:** Design System do Videira Music (`videira-music/docs/design-system.md`, `styles/globals.css`, `packages/contract/src/kernel/design/brand.ts`).
 
 ## 1. O problema em uma frase
@@ -108,7 +108,7 @@ Abrir app ─► T1 carrega sozinho (setlist + biblioteca + destino)
 
 | Do DS Videira | Uso no async-videira |
 |---|---|
-| Tokens primitivos e semânticos (`--videira-*`, `--neutral-*`, `--color-*`, claro e escuro) | Copiados 1:1 em `src/ui/prototype/styles.css`. Fonte da verdade continua no `videira-music`. |
+| Tokens primitivos e semânticos (`--videira-*`, `--neutral-*`, `--color-*`, claro e escuro) | Copiados 1:1 em `docs/design/prototype/styles.css`. Fonte da verdade continua no `videira-music`. |
 | Marca (`videiraBrand`: `primary 136 42% 33%`…) | `--brand-*` no `:root`. |
 | Status `danger` / `warning` / `success` | Estados das músicas e alertas. Nunca a paleta `red` solta. |
 | Atkinson Hyperlegible (UI) + JetBrains Mono (dado) | Mono para ID Holyrics, horário de releitura e código de erro em "Detalhes técnicos". |

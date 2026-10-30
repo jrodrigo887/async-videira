@@ -46,3 +46,26 @@ Biblioteca com 59 musicas (29 reais + 30 "ZZ TESTE", importadas por TXT):
 - NAO testado: 409 com editor ja aberto; confirmacao visual do preenchimento (pendente do usuario); intervalo minimo de 2 s entre chamadas.
 - A resposta nao devolve id: apos o operador salvar, descobrir o id relendo GetSongs e comparando com o catalogo anterior (novo id) ou por titulo+artista exatos.
 - CONFIRMADO pelo usuario (2026-10-29): o editor "Nova musica" abriu com titulo, artista e letra preenchidos.
+
+## Atualizacao da tela do Holyrics apos a API (teste do usuario, 2026-10-29)
+- Codigo: AddLyricsToPlaylist executa na thread de interface (MusicMain.execEDT) e a API responde ok ANTES do redesenho (WSScheduleConsumer.addLyricsToPlaylist).
+- 1o teste (applyOrder real, com releituras): usuario relatou que a tela atualizou "depois" de alguma acao minha.
+- 2o teste (20:37:48 UTC, so Remove+Add, SEM leitura, usuario sem tocar na janela): a tela mostrou a nova ordem (E Ele, Mil Graus). Logo a releitura via API NAO e necessaria para a tela atualizar.
+- Atraso exato nao medido (usuario respondeu apenas "sim"). Hipotese restante: atraso curto de repintura da interface.
+- Implicacao de UX: apos publicar, orientar o operador a conferir a tela do Holyrics e mostrar "pode levar alguns segundos"; o "conferido" do app vem da releitura via API, nao da tela.
+- CORRECAO (resposta do usuario): a tela atualizou "em milesimos de segundo", ou seja, praticamente instantanea. Nao ha atraso relevante de repintura. A impressao de "atualizou depois" do 1o teste coincide com o fato de o botao Publicar do prototipo ser apenas simulado: a mudanca real veio da chamada do orquestrador, nao do clique.
+- Implicacao de UX: nao e preciso aviso de "pode levar alguns segundos"; basta o resultado "conferido" apos a releitura.
+
+## Resiliência de applyOrder — testes automatizados com fake (2026-10-29)
+
+Estes cenarios foram exercitados somente contra o fake HTTP em memória de `tests/helpers/fake-holyrics-proxy.mjs`; nenhum teste escreveu no Holyrics instalado.
+
+- Queda da conexão depois de Remove e antes de Add: falha reportada em pt-BR; playlist anterior restaurada e verificada (`restored=true`, `APPLY_FAILED`).
+- Add respondendo HTTP 500: playlist anterior restaurada e verificada; sync-report enviado com status `FAILED`.
+- Releitura em ordem diferente: verificação falha, o adapter restaura a playlist anterior e confirma a restauração.
+- Add e tentativa de restauração respondendo HTTP 500: retorno `RESTORE_FAILED`, `restored=false`; estado registra falha e não marca aplicação bem-sucedida.
+- Holyrics offline no ping: erro `HOLYRICS_NOT_RUNNING` com tópico `configurar-holyrics`; nenhuma escrita feita.
+- Videira indisponível para sync-report: relatório `FAILED` fica na fila, é enviado uma vez no retry; após recuperação do Holyrics, nova aplicação termina `OK` e repetição é idempotente.
+- Popup com HTTP 409: `EDITOR_ALREADY_OPEN`, sem retry automático; chamada posterior respeita intervalo mínimo de 2 s.
+
+Os testes não substituem a validação ao vivo do encerramento do Holyrics durante escrita/restauração. macOS continua sem validação.

@@ -24,3 +24,4 @@ Contrato de comandos, eventos de progresso, erros, timeouts e payloads está em 
 - Todas as chamadas de rede usam allowlist de hosts/rotas e validação de entrada no main.
 - Timeout de rede não implica timeout global da operação de escrita; polling e espera de estabilização têm prazo explícito e falha verificável.
 - Reinício no meio de aplicação é estado incerto: ao iniciar, ler a playlist, nunca inferir sucesso pelo estado anterior, e oferecer recuperação/novo dry-run.
+  - Implementação: o apply grava `journal = started{backupIds, targetIds}` no estado ANTES da primeira escrita e `done{status}` depois. Na abertura, `worship.recover` (`inspect`) relê a playlist e informa se ela está como o alvo, como o backup ou diferente; `restore` reaplica o backup, `dismiss` só encerra o aviso. Nenhuma ação é automática.

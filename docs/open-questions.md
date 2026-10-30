@@ -5,7 +5,7 @@ As decisões de produto e arquitetura estão registradas nos ADRs 0001–0008. E
 ## Holyrics / desktop
 
 - Fazer spike Electron com build NSIS por usuário, Credential Manager, bandeja, agendamento sem sessão interativa e update assinado; medir tamanho e consumo reais (P0).
-- Definir implementação/adaptador Keychain e validar `.app`/`.dmg` assinado e notarizado em macOS com Holyrics (P1).
+- **macOS não testado:** definir implementação/adaptador Keychain e validar `.app`/`.dmg` assinado e notarizado em macOS com Holyrics (P1).
 - Prototipar IPC do contrato `docs/contracts/ui-core-ipc.md` contra o core atual sem mover responsabilidades da frente do núcleo; alinhar com `docs/design/view-models.md` quando existir (P0).
 - Definir serviço/fornecedor de assinatura Authenticode, armazenamento seguro da chave e política de rotação/revogação; validar reputação SmartScreen (P0 para distribuição pública).
 - Validar atualização assinada com rollback, downgrade bloqueado e migração recuperável do estado JSON (P0).
@@ -16,6 +16,7 @@ As decisões de produto e arquitetura estão registradas nos ADRs 0001–0008. E
 - Validar o fluxo completo em macOS: servidor local, porta, firewall, permissões mínimas, Credential Keychain e pacote `.dmg`.
 - Medir `SearchLyrics` com biblioteca acima de 50 resultados e confirmar que a resolução sempre filtra candidatos por título/artista exatos; o catálogo principal permanece `GetSongs`.
 - Validar encerramento/reinício do Holyrics durante remoção, adição, releitura e restauração best-effort.
+- A falha de Add, a queda entre Remove/Add, a ordem incorreta na releitura e a restauração falha foram cobertas por fake em memória; ainda falta reproduzir encerramento real do Holyrics durante escrita/restauração para validar o comportamento da instalação alvo.
 - Validar na instalação alvo o conjunto mínimo de permissões definido em `docs/architecture.md`; o token da validação ao vivo tinha permissões extras.
 
 ## Contratos Videira necessários

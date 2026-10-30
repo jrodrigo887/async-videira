@@ -1,0 +1,81 @@
+{
+  "name": "async-videira",
+  "version": "0.1.0",
+  "description": "Prepare e publique setlists do Videira Music no Holyrics",
+  "author": "Videira",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "main": "out/electron/main.js",
+  "scripts": {
+    "dev": "npm run build:main && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "typecheck": "tsc --noEmit",
+    "build:main": "tsc -p tsconfig.build.json && node scripts/copy-assets.ts",
+    "build": "node scripts/create-icon.ts && npm run build:main && vite build && electron-builder --dir",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test",
+    "smoke": "node electron/smoke.ts",
+    "dist:win": "node scripts/create-icon.ts && npm run build:main && vite build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "dompurify": "3.2.4",
+    "marked": "15.0.7",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.3.4",
+    "concurrently": "9.1.2",
+    "electron": "45.1.0",
+    "electron-builder": "25.1.8",
+    "typescript": "5.9.3",
+    "vite": "5.4.14",
+    "wait-on": "8.0.2"
+  },
+  "build": {
+    "appId": "org.videira.asyncvideira",
+    "productName": "async-videira",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**",
+      ".vite-renderer/**",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "out/electron/main.js"
+    },
+    "win": {
+      "icon": "build/app.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "identity": null
+    }
+  }
+}

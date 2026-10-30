@@ -5,7 +5,7 @@
 
 ## Contexto
 
-O núcleo existente é JavaScript ESM (`.mjs`), usa `fetch` nativo e `node:test`. O design system Videira é React/Vite. O produto precisa de UI local, acesso ao cofre do SO, bandeja/agendamento e chamadas à API Holyrics em `127.0.0.1:8091` e à API HTTPS Videira. A manutenção do núcleo está em outra frente; reescrevê-lo cria divergência e risco de publicação.
+O núcleo existente era JavaScript ESM (`.mjs`; hoje TypeScript estrito, executado direto pelo Node 22.18+ e compilado para `out/` no empacotamento), usa `fetch` nativo e `node:test`. O design system Videira é React/Vite. O produto precisa de UI local, acesso ao cofre do SO, bandeja/agendamento e chamadas à API Holyrics em `127.0.0.1:8091` e à API HTTPS Videira. A manutenção do núcleo está em outra frente; reescrevê-lo cria divergência e risco de publicação.
 
 ## Decisão
 

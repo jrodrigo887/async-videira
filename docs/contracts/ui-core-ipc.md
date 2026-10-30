@@ -31,6 +31,7 @@ Datas são ISO-8601 UTC. Tamanho máximo inicial de payload IPC: 1 MiB; artefato
 | `help.list` | `{}` | metadados dos tópicos empacotados: `id`, `title`, `summary`, `keywords`, `context` |
 | `help.get` | `{ topicId }` | `{ topicId, title, markdown }`; conteúdo validado local, sem HTML confiável |
 | `help.search` | `{ query, limit?: number }` | tópicos e trechos ranqueados pelo índice JSON local, sem rede |
+| `logs.list` | `{}` | até 300 eventos locais redigidos, sem caminho de arquivo ou conteúdo sensível |
 | `app.diagnosticInfo` | `{}` | resumo copiável sem segredos; a UI só copia após ação explícita |
 | `externalLink.open` | `{ url }` | `{ opened: boolean }`; main valida esquema/host e abre navegador do sistema |
 | `settings.get` / `settings.update` | preferências não secretas e schema versionado | configurações suportadas; não contém tokens |

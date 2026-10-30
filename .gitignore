@@ -3,6 +3,7 @@ node_modules/
 target/
 dist/
 build/
+.vite-renderer/
 release/
 coverage/
 *.log
@@ -42,3 +43,8 @@ Thumbs.db
 # Credenciais locais de teste (nunca versionar)
 discovery/videira-local-env.md
 fixtures/holyrics-import-zz-teste/
+
+out/
+
+# Notas pessoais fora do versionamento
+.notas/

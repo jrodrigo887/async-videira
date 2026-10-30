@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teste: página web falando com o Holyrics local</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; } code, pre { font-family: ui-monospace, monospace; font-size: .85rem; }
+  .card { border: 1px solid #8884; border-radius: .75rem; padding: 1rem; margin: 1rem 0; }
+  button { font: inherit; padding: .5rem 1rem; border-radius: 999px; border: 1px solid #8886; cursor: pointer; }
+  button.primary { background: #2f7d3b; color: #fff; border-color: #2f7d3b; }
+  input { font: inherit; padding: .5rem .75rem; width: 100%; box-sizing: border-box; border-radius: .5rem; border: 1px solid #8886; }
+  table { border-collapse: collapse; width: 100%; } td, th { border-bottom: 1px solid #8883; padding: .4rem .5rem; text-align: left; vertical-align: top; }
+  .ok { color: #1b8a3a; font-weight: 700; } .bad { color: #c0392b; font-weight: 700; } .warn { color: #b9770e; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>Teste: uma página web consegue falar com o Holyrics deste computador?</h1>
+<p>Isto simula a página do videira-music chamando a API local do Holyrics. Nenhum dado sai deste computador.</p>
+
+<div class="card">
+  <strong>Esta página</strong>
+  <table id="env"></table>
+</div>
+
+<div class="card">
+  <label for="url"><strong>Endereço do Holyrics</strong></label>
+  <input id="url" value="http://127.0.0.1:8091">
+  <p style="margin-bottom:.25rem"><label for="token"><strong>Token do Holyrics</strong> (opcional — só para testar leituras com token; fica só nesta página)</label></p>
+  <input id="token" type="password" autocomplete="off" placeholder="Cole o token para os testes 3 e 4">
+  <p><button class="primary" id="run">Rodar testes</button> <button id="copy" disabled>Copiar resultado</button></p>
+</div>
+
+<div class="card">
+  <strong>Resultado</strong>
+  <table id="out"><tr><td class="warn">Ainda não rodou.</td></tr></table>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const env = {
+  "Endereço desta página": location.origin,
+  "Contexto seguro (https)": String(window.isSecureContext),
+  "Navegador": navigator.userAgent,
+};
+$("env").innerHTML = Object.entries(env).map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("");
+
+const rows = [];
+function show() {
+  $("out").innerHTML = rows.map((r) => `<tr><td>${r.n}</td><td class="${r.cls}">${r.verdict}</td><td>${r.detail}</td></tr>`).join("");
+  $("copy").disabled = !rows.length;
+}
+async function attempt(n, label, fn) {
+  const started = performance.now();
+  try {
+    const r = await fn();
+    rows.push({ n: `${n}. ${label}`, cls: r.cls ?? "ok", verdict: r.verdict, detail: `${r.detail ?? ""} (${Math.round(performance.now() - started)} ms)` });
+  } catch (e) {
+    rows.push({ n: `${n}. ${label}`, cls: "bad", verdict: "Bloqueado pelo navegador", detail: `${e.name}: ${e.message}. Abra o Console (F12) para o motivo exato.` });
+  }
+  show();
+}
+
+$("run").onclick = async () => {
+  rows.length = 0; show();
+  const base = $("url").value.replace(/\/+$/, "");
+  const token = $("token").value.trim();
+
+  await attempt(1, "Leitura simples (GET) sem token", async () => {
+    const r = await fetch(`${base}/api/GetVersion`);
+    return { verdict: "Resposta legível", detail: `HTTP ${r.status} — o servidor respondeu e o navegador deixou a página ler (esperado 401 sem token)` };
+  });
+
+  await attempt(2, "Chamada JSON (POST com pré-voo CORS) sem token", async () => {
+    const r = await fetch(`${base}/api/GetVersion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    return { verdict: "Resposta legível", detail: `HTTP ${r.status} — pré-voo aceito pelo navegador e pelo Holyrics` };
+  });
+
+  if (!token) {
+    rows.push({ n: "3–4. Com token", cls: "warn", verdict: "Pulado", detail: "Cole o token acima para testar leitura real." }); show();
+  } else {
+    await attempt(3, "GetVersion com token (como o app faz)", async () => {
+      const r = await fetch(`${base}/api/GetVersion?token=${encodeURIComponent(token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const j = await r.json();
+      return { verdict: r.ok ? "Funcionou" : "Recusado", cls: r.ok ? "ok" : "warn", detail: r.ok ? `Holyrics ${j?.data?.version ?? "?"}` : `HTTP ${r.status}: ${j?.error ?? ""}` };
+    });
+    await attempt(4, "GetSongs com token (biblioteca)", async () => {
+      const r = await fetch(`${base}/api/GetSongs?token=${encodeURIComponent(token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: "id,title,artist" }) });
+      const j = await r.json();
+      const n = Array.isArray(j?.data) ? j.data.length : null;
+      return { verdict: n !== null ? "Funcionou" : "Recusado", cls: n !== null ? "ok" : "warn", detail: n !== null ? `${n} músicas lidas` : `HTTP ${r.status}: ${j?.error ?? "permissão GetSongs?"}` };
+    });
+  }
+};
+
+$("copy").onclick = async () => {
+  const text = [...Object.entries(env).map(([k, v]) => `${k}: ${v}`), "", ...rows.map((r) => `${r.n} => ${r.verdict} | ${r.detail.replace(/<[^>]+>/g, "")}`)].join("\n");
+  try { await navigator.clipboard.writeText(text); $("copy").textContent = "Copiado"; } catch { $("copy").textContent = "Não foi possível copiar"; }
+};
+</script>
+</body>
+</html>

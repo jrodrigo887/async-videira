@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": false, "outDir": "out", "rootDir": ".", "sourceMap": true, "types": ["node"] },
+  "include": ["src", "electron"],
+  "exclude": ["src/ui", "electron/smoke.ts", "node_modules", "out", "dist"]
+}

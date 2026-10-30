@@ -1,6 +1,6 @@
 ﻿# ADR 0001: stack inicial
 
-- **Status:** Proposta de stack ajustada; decisões de produto e integração estão fechadas, validação multiplataforma pendente.
+- **Status:** Substituída pelo [ADR 0005](0005-shell-desktop.md) (Electron + React/Vite + Node). Mantida como registro da avaliação inicial; a proposta Tauri/Rust **não** foi adotada.
 - **Data:** 2026-10-29
 
 ## Contexto

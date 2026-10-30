@@ -5,7 +5,7 @@ Este mapa liga códigos de erro, estados e telas aos tópicos de `src/help/*.md`
 - o link **Ver ajuda sobre isto**, dentro do erro ou do diálogo;
 - a tecla **F1**, que abre o tópico do contexto atual.
 
-No protótipo, o mapa vive em `HELP_FOR_CODE` e `contextTopic()`, em `src/ui/prototype/app.js`. No app final, a UI faz o mesmo mapeamento sobre `CoreError.code` (docs/contracts/ui-core-ipc.md), sem depender do texto da mensagem.
+No protótipo, o mapa vive em `HELP_FOR_CODE` e `contextTopic()`, em `docs/design/prototype/app.js` (arquivado). No app final, a UI faz o mesmo mapeamento sobre `CoreError.code` (docs/contracts/ui-core-ipc.md), sem depender do texto da mensagem.
 
 Regras:
 - O link é um botão de texto com ícone `?` e o rótulo "Ver ajuda sobre isto", ou um rótulo específico (§3). Ele nunca substitui a ação principal do erro: "Tentar de novo" continua primeiro.
@@ -35,7 +35,7 @@ Regras:
 | Item `ready` + `lyricsPlaceholder` | linha "Pronta — sem letra"; diálogo Substituir | `musica-nao-esta-no-holyrics` | — (proposta) |
 | Resultado `failed` / `restore-failed` | tela Resultado | `problemas-comuns` | F1 |
 
-**Alinhamento com o núcleo:** `src/core/help/error-topics.json` (`helpTopicForError`, ADR 0009) já aponta para os mesmos IDs. Ele também usa códigos-sinônimo que a UI deve tratar igual:
+**Alinhamento com o núcleo:** o catálogo de erros `src/domain/shared/errors.ts` (campo `helpTopic`; `helpTopicForError`, ADR 0009) já aponta para os mesmos IDs. Ele também usa códigos-sinônimo que a UI deve tratar igual:
 
 | Código no núcleo | Tópico |
 |---|---|
@@ -45,7 +45,7 @@ Regras:
 | `SONG_AMBIGUOUS` | `musica-ambigua-e-vinculos` |
 | `SONG_ABSENT` | `musica-nao-esta-no-holyrics` |
 
-Diferenças: `VIDEIRA_TOKEN_INVALID`, `VIDEIRA_NO_SETLIST`, `VIDEIRA_OFFLINE`, `RATE_LIMITED` e `SETLIST_CHANGED` estão neste mapa, mas ainda não em `error-topics.json`. Proposta para a arquitetura: acrescentar esses cinco códigos (não editei `src/core`). Quando `CoreError.helpTopicId` vier preenchido, ele tem prioridade sobre este mapa.
+Diferenças: `VIDEIRA_TOKEN_INVALID`, `VIDEIRA_NO_SETLIST`, `VIDEIRA_OFFLINE`, `RATE_LIMITED` e `SETLIST_CHANGED` estão neste mapa, mas ainda não no catálogo de erros. Proposta para a arquitetura: acrescentar esses cinco códigos ao catálogo. Quando `CoreError.helpTopicId` vier preenchido, ele tem prioridade sobre este mapa.
 
 ## 2. Telas → tópico (F1 sem erro)
 
